@@ -2,9 +2,9 @@ export class KuukiyomiHandler {
   constructor(config = {}) {
     this.config = {
       // 冷却时间（毫秒）
-      cooldown: config.cooldown || 10000,
+      cooldown: config.cooldown || 1000,
       // 群组消息频率限制（条/分钟）
-      groupRateLimit: config.groupRateLimit || 20,
+      groupRateLimit: config.groupRateLimit || 30,
       // 用户消息频率限制（条/分钟）
       userRateLimit: config.userRateLimit || 5,
       // 触发词

@@ -9,8 +9,6 @@ export class LLMHandler {
 			maxTokens: config.maxTokens || 1000,
 			// 系统提示词
 			systemPrompt: config.systemPrompt,
-			// 历史消息数量
-			maxHistory: config.maxHistory || 5,
 			...config,
 		};
 		// 初始化OpenAI客户端
@@ -58,25 +56,29 @@ export class LLMHandler {
 	/**
 	 * 获取消息历史并格式化为LLM消息格式
 	 */
-	processMessageHistoryForLLM(processedMsg) {
-		const history = processedMsg;
-		let textHistory = history.slice(-this.config.maxHistory).map((msg) => {
-			let content = "";
-
-			// 构建用户标识
-			const userIdentifier = `${msg.firstName || ""}${msg.lastName || ""}, [${this.formatDateTime(msg.date)}]`;
-
-			// 如果有回复消息
-			if (msg.replyTo && msg.replyTo.text) {
-				const replyUserIdentifier = `${msg.replyTo.firstName || ""}${msg.replyTo.lastName || ""}`;
-				content = `${userIdentifier}\n> ${replyUserIdentifier}: ${msg.replyTo.text}\n${msg.text}`;
+	processMessageHistoryForLLM(messageContext) {
+		const history = messageContext;
+		let textHistory = history.map((item) => {
+			// 根据内容类型处理不同的格式
+			if (item.content_type === 'message') {
+				const metadata = item.metadata || {};
+				const userIdentifier = `${metadata.from.first_name || ""}${metadata.from.last_name || ""}, [${this.formatDateTime(metadata.date)}]`;
+				
+				// 处理回复消息
+				if (metadata.reply_to) {
+					const replyMeta = metadata.reply_to;
+					const replyUserIdentifier = `${replyMeta.from.first_name || ""}${replyMeta.from.last_name || ""}`;
+					return `${userIdentifier}\n> ${replyUserIdentifier}: ${replyMeta.text}\n${item.text}`;
+				} else {
+					return `${userIdentifier}\n${item.text}`;
+				}
 			} else {
-				content = `${userIdentifier}\n${msg.text}`;
+				// 处理bot的actions (note, reply, search等)
+				return `<bot_action type="${item.content_type}">\n${item.text}\n</bot_action>`;
 			}
-
-			return content;
 		});
-        return "<chat_history>\n" + textHistory.join("\n") + "\n</chat_history>";
+		
+		return "<chat_history>\n" + textHistory.join("\n") + "\n</chat_history>";
 	}
 
 	/**
@@ -98,7 +100,7 @@ export class LLMHandler {
         // 添加指令信息
         userRoleMessages.push(`<function>
 <function_call_instructions>
-你可以直接输出函数对应的identifier 作为XML Tag以调用函数，里面包裹函数参数值
+你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹函数值。支持一次调用多个函数。
 </function_call_instructions>
 <collection name="chat">
 <collection.instructions>
@@ -106,7 +108,7 @@ export class LLMHandler {
 </collection.instructions>
 <api identifier="chat____search">根据一个关键词检索群聊相关内容</api>
 <api identifier="chat____reply">当你认为可以回复的时候，可以调用此函数回复</api>
-<api identifier="chat____note">当你觉得不用回复，但可以记录当时的想法</api>
+<api identifier="chat____note">当你觉得不用回复，但有一些有趣的碎碎念，可以记下来</api>
 <api identifier="chat____skip">当你认为没有必要回复也没有什么值得记录的内容的时候，可以跳过</api>
 </collection>
 <collection name="web">
@@ -134,30 +136,8 @@ export class LLMHandler {
 	 */
 	buildRelatedMessage(similarContent) {
 		console.log(similarContent);
-
+		// todo
         return ;
-		const context = [];
-
-		// 添加响应类型相关信息
-		switch (decisionType) {
-			case "command":
-				context.push(`用户使用了命令: ${processedMsg.command}`);
-				break;
-			case "mention":
-				context.push("用户直接提到了你");
-				break;
-			case "trigger":
-				context.push("用户使用了触发词");
-				break;
-			case "random":
-				context.push("这是一个随机响应场景");
-				break;
-		}
-
-		// 添加聊天类型信息
-		context.push(`这是在${processedMsg.chatType === "private" ? "私聊" : "群聊"}中`);
-
-		return context.join("\n");
 	}
 
 	/**
@@ -181,21 +161,103 @@ export class LLMHandler {
 	 * 处理LLM的响应
 	 */
 	async processResponse(response, context) {
-		// TODO: 处理LLM的响应
-		console.log(response);
-		return "";
+		const content = response.content;
+		
+		if(!response.content) {
+			return {
+				action: 'skip',
+				content: null
+			};
+		}
+
+		try {
+			// 解析XML格式的函数调用
+			const functionCalls = this.extractFunctionCalls(content);
+			
+			for (const call of functionCalls) {
+				switch (call.function) {
+					case 'chat____reply':
+						return {
+							action: 'reply',
+							content: call.params.trim()
+						};
+					
+					case 'chat____note':
+						return {
+							action: 'note',
+							content: call.params.trim()
+						};
+						
+					case 'chat____search':
+						// todo
+						return {
+							action: 'skip',
+							content: null
+						};
+						
+						// const searchResults = await context.searchChat(call.params.trim());
+						// // 将搜索结果返回给LLM进行进一步处理
+						// return this.handleSearchResults(searchResults, context);
+						
+					case 'chat____skip':
+						return {
+							action: 'skip',
+							content: null
+						};
+				}
+			}
+		} catch (error) {
+			console.error("处理响应出错:", error);
+		}
+		
 	}
 
 	/**
-	 * 处理函数调用
+	 * 从LLM响应中提取函数调用
 	 */
-	async handleFunctionCall(functionCall, processedMsg) {
-		// TODO: 实现具体的函数调用逻辑
-		console.log("Function call:", functionCall);
-		return {
-			type: "function_result",
-			content: "函数调用结果",
-			functionName: functionCall.name,
-		};
+	extractFunctionCalls(content) {
+		const functionCalls = [];
+		const regex = /<(chat____\w+|web____\w+)>([\s\S]*?)<\/\1>/g;
+		
+		let match;
+		let hasMatches = false;
+		while ((match = regex.exec(content)) !== null) {
+			hasMatches = true;
+			functionCalls.push({
+				function: match[1],
+				params: match[2]
+			});
+		}
+		
+		// 如果没有匹配到任何标签，将整个内容作为回复处理（不小心说出心里话也是萌点）
+		if (!hasMatches) {
+			// 移除所有XML标签
+			const cleanContent = content.replace(/<[^>]*>/g, '').trim();
+			if (cleanContent) {
+				functionCalls.push({
+					function: 'chat____reply',
+					params: cleanContent
+				});
+			}
+		}
+		
+		return functionCalls;
+	}
+
+	/**
+	 * 处理搜索结果
+	 */
+	async handleSearchResults(searchResults, context) {
+		// 将搜索结果格式化并发送给LLM进行分析
+		const messages = [
+			{ role: "system", content: this.config.systemPrompt },
+			{ 
+				role: "user", 
+				content: `基于以下搜索结果，请生成一个合适的回复：\n${JSON.stringify(searchResults, null, 2)}` 
+			}
+		];
+		
+		const response = await this.callLLM(messages);
+		return this.processResponse(response, context);
 	}
 }

@@ -39,7 +39,7 @@ export class RAGHelper {
                     id SERIAL PRIMARY KEY,
                     chat_id BIGINT NOT NULL,
                     message_id BIGINT,  -- telegram消息ID，对于非消息内容可以为null
-                    content_type TEXT NOT NULL,  -- 'message', 'thought', 'search_result' 等
+                    content_type TEXT NOT NULL,  -- 'message', 'search_result', 'reply', 'note' 等
                     text TEXT NOT NULL,
                     metadata JSONB NOT NULL,
                     embedding vector(1536),
@@ -69,7 +69,7 @@ export class RAGHelper {
                 model: process.env.RAG_OPENAI_MODEL,
                 input: text,
             });
-            return response.data[0].embedding;
+            return `[${response.data[0].embedding.join(',')}]`;
         } catch (error) {
             console.error('获取embedding错误:', error);
             return null;
@@ -92,15 +92,12 @@ export class RAGHelper {
             const embedding = await this.getEmbedding(text);
             if (!embedding) return false;
             
-            // 将embedding数组转换为PostgreSQL向量格式
-            const vectorString = `[${embedding.join(',')}]`;
-            
             const client = await this.pool.connect();
             await client.query(
                 `INSERT INTO chat_memories 
                 (chat_id, message_id, content_type, text, metadata, embedding) 
                 VALUES ($1, $2, $3, $4, $5, $6::vector)`,
-                [chat_id, message_id, content_type, text, metadata, vectorString]
+                [chat_id, message_id, content_type, text, metadata, embedding]
             );
             client.release();
             
@@ -112,8 +109,8 @@ export class RAGHelper {
         }
     }
     
-    // 保存bot的思考或搜索结果
-    async saveThought(chatId, text, type = 'thought', relatedMessageId = null, additionalMetadata = {}) {
+    // 保存bot的行动
+    async saveAction(chatId, text, type, relatedMessageId = null, additionalMetadata = {}) {
         try {
             const embedding = await this.getEmbedding(text);
             if (!embedding) return false;
@@ -128,7 +125,7 @@ export class RAGHelper {
             await client.query(
                 `INSERT INTO chat_memories 
                 (chat_id, message_id, content_type, text, metadata, embedding) 
-                VALUES ($1, $2, $3, $4, $5, $6)`,
+                VALUES ($1, $2, $3, $4, $5, $6::vector)`,
                 [chatId, null, type, text, metadata, embedding]
             );
             client.release();
@@ -146,39 +143,41 @@ export class RAGHelper {
         try {
             const client = await this.pool.connect();
             
-            // 获取前后的消息，包括当前消息
             const result = await client.query(
-                `(
-                    SELECT text, metadata, content_type, message_id,
-                           created_at, 'before' as position
+                `WITH target_message AS (
+                    SELECT id, created_at
                     FROM chat_memories
-                    WHERE chat_id = $1
-                    AND message_id < $2
-                    AND content_type = 'message'
-                    ORDER BY message_id DESC
+                    WHERE chat_id = $1 AND message_id = $2
+                    LIMIT 1
+                )
+                (
+                    SELECT cm.text, cm.metadata, cm.content_type, cm.message_id,
+                           cm.created_at, 'before' as position
+                    FROM chat_memories cm, target_message
+                    WHERE cm.chat_id = $1
+                    AND cm.id < target_message.id
+                    ORDER BY cm.id DESC
                     LIMIT $3
                 )
                 UNION ALL
                 (
-                    SELECT text, metadata, content_type, message_id,
-                           created_at, 'current' as position
-                    FROM chat_memories
-                    WHERE chat_id = $1
+                    SELECT cm.text, cm.metadata, cm.content_type, cm.message_id,
+                           cm.created_at, 'current' as position
+                    FROM chat_memories cm
+                    WHERE cm.chat_id = $1
                     AND message_id = $2
-                    AND content_type = 'message'
                 )
                 UNION ALL
                 (
-                    SELECT text, metadata, content_type, message_id,
-                           created_at, 'after' as position
-                    FROM chat_memories
-                    WHERE chat_id = $1
-                    AND message_id > $2
-                    AND content_type = 'message'
-                    ORDER BY message_id ASC
+                    SELECT cm.text, cm.metadata, cm.content_type, cm.message_id,
+                           cm.created_at, 'after' as position
+                    FROM chat_memories cm, target_message
+                    WHERE cm.chat_id = $1
+                    AND cm.id > target_message.id
+                    ORDER BY cm.id ASC
                     LIMIT $3
                 )
-                ORDER BY message_id`,
+                ORDER BY created_at`,
                 [chatId, messageId, limit]
             );
             
@@ -194,16 +193,13 @@ export class RAGHelper {
     async searchSimilarContent(chatId, queryText, options = {}) {
         const {
             limit = 5,
-            contentTypes = ['message', 'thought', 'search_result'],
+            contentTypes = [],
             timeWindow = '7 days'
         } = options;
         
         try {
             const queryEmbedding = await this.getEmbedding(queryText);
             if (!queryEmbedding) return [];
-            
-            // 将查询向量转换为PostgreSQL向量格式
-            const vectorString = `[${queryEmbedding.join(',')}]`;
             
             const client = await this.pool.connect();
             const result = await client.query(
@@ -216,11 +212,11 @@ export class RAGHelper {
                     embedding <-> $1::vector as distance
                 FROM chat_memories
                 WHERE chat_id = $2
-                AND content_type = ANY($3)
+                AND (ARRAY_LENGTH($3::text[], 1) IS NULL OR content_type = ANY($3))
                 AND created_at > NOW() - $4::interval
                 ORDER BY embedding <-> $1::vector
                 LIMIT $5`,
-                [vectorString, chatId, contentTypes, timeWindow, limit]
+                [queryEmbedding, chatId, contentTypes, timeWindow, limit]
             );
             client.release();
             

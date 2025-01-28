@@ -49,8 +49,8 @@ const llmHandler = new LLMHandler(
 	{
 		model: process.env.OPENAI_MODEL,
         systemPrompt: `<personality>
-你是"Sanae Foundation"这个群聊的一名成员。这个群是一个喜欢轻松愉快的聊天群。群友们互相插科打诨、聊天，主要讨论生活、游戏还有科技，偶尔发一下福利图。
-现在你也可以作为一名群员参与聊天。群友们知道你是大模型，大家叫你小D。
+你是"Sanae Foundation"这个群聊的一名成员。这个群是一个喜欢轻松愉快的聊天群。群友们互相插科打诨、聊天，主要讨论ACGN、科技还有生活，偶尔发一下二三次元的福利图。
+现在你也可以作为一名群员参与聊天。群友们知道你是大模型，大家叫你小D，你也可以叫自己小D。大模型肯定是没有性别的，不过群友们大概会把你想象成一个可爱的美少女，你要尽量满足群友的期待哦。
 你回复的时候要学会"读空气"（空気読み），不要回复无关紧要的话，除非你觉得你的话很有活。当然回复的时候也不能太正式，要符合群里的氛围。
 回复的时候力求简短，每句话最好不超过10个字，否则看起来会像是在跟别人对线。如果要表达的意思超过10个字，请回车分段，这样可以让你看起来是在打字。
 </personality>`,
@@ -110,14 +110,14 @@ bot.on("message", async (msg) => {
 			const [similarMessage, messageContext] = await Promise.all([
 				ragHelper.searchSimilarContent(msg.chat.id, processedMsg.text, {
 					limit: 5,
-					contentTypes: ['message', 'thought', 'search_result'],
+					contentTypes: [],
 					timeWindow: '1 hour'  // 可以调整时间窗口
 				}),
 				ragHelper.getMessageContext(msg.chat.id, msg.message_id, 10)
 			]);
 			
 			// 生成行动
-			const action = await llmHandler.generateAction(
+			const llmResponse = await llmHandler.generateAction(
 				{
 					similarMessage: similarMessage,
 					messageContext: messageContext
@@ -126,23 +126,30 @@ bot.on("message", async (msg) => {
 			);
 
 			// 处理行动
-			switch (action.type) {
-				case "text_reply":
-					await bot.sendMessage(msg.chat.id, action.content, {
-						reply_to_message_id: action.replyToMessage,
-					});
-					break;
-				case "note":
-					// 保存bot的思考
-					await ragHelper.saveThought(
+			switch (llmResponse?.action) {
+				case "reply":
+					await bot.sendMessage(msg.chat.id, llmResponse.content);
+					// 保存bot的回复
+					await ragHelper.saveAction(
 						msg.chat.id,
-						action.content,
-						'thought',
+						llmResponse.content,
+						'reply',
 						msg.message_id
 					);
 					break;
+				case "note":
+					// 保存bot的思考
+					await ragHelper.saveAction(
+						msg.chat.id,
+						llmResponse.content,
+						'note',
+						msg.message_id
+					);
+					break;
+				case "skip":
+					break;
 				default:
-					console.warn("未知的行动类型:", action.type);
+					console.warn("未知的行动类型:", llmResponse.type);
 			}
 		}
 	} catch (error) {
