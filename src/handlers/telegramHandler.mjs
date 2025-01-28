@@ -1,6 +1,5 @@
 export class TelegramHandler {
     constructor(config = {}) {
-        this.botUsername = config.botUsername;
         this.debug = config.debug || false;
     }
 
@@ -13,11 +12,6 @@ export class TelegramHandler {
         try {
             // 基础消息检查
             if (!telegramMsg || !telegramMsg.text) {
-                return null;
-            }
-
-            // 如果是机器人自己的消息则忽略
-            if (telegramMsg.from?.username === this.botUsername) {
                 return null;
             }
 
@@ -79,10 +73,6 @@ export class TelegramHandler {
                 standardizedMsg.metadata.media_type = telegramMsg.photo ? 'photo' : 
                                                     telegramMsg.video ? 'video' : 
                                                     'document';
-            }
-
-            if (this.debug) {
-                console.log('标准化后的消息:', standardizedMsg);
             }
 
             return standardizedMsg;

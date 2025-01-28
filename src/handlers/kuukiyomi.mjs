@@ -36,46 +36,57 @@ export class KuukiyomiHandler {
     };
 
     try {
+      
+      // 优先 检查是否被提及或回复
+      if (processedMsg.metadata.reply_to_message?.from?.id == this.config.botId ||
+        processedMsg.text?.includes(`@${this.config.botUsername}`)) {
+      result.shouldAct = true;
+      result.decisionType = 'mention';
+      result.reason = '<reason>被提及或回复</reason>';
+      return result;
+    }
+
       // 1. 检查冷却时间
       if (!this.checkCooldown(processedMsg.chat_id)) {
-        result.reason = '冷却时间内';
+        result.reason = '<reason>冷却时间内</reason>';
         return result;
       }
 
       // 2. 检查频率限制
       if (!this.checkRateLimit(processedMsg)) {
-        result.reason = '超过频率限制';
+        result.reason = '<reason>超过频率限制</reason>';
         return result;
       }
 
-      // 5. 检查触发词
+
+      // 4. 检查触发词
       if (this.checkTriggerWords(processedMsg.text)) {
         result.shouldAct = true;
         result.decisionType = 'trigger';
-        result.reason = '触发词匹配';
+        result.reason = '<reason>触发词匹配</reason>';
         return result;
       }
 
-      // 6. 检查忽略词
+      // 5. 检查忽略词
       if (this.checkIgnoreWords(processedMsg.text)) {
-        result.reason = '忽略词匹配';
+        result.reason = '<reason>忽略词匹配</reason>';
         return result;
       }
 
-      // 7. 随机响应判断
+      // 6. 随机响应判断
       if (Math.random() < this.config.responseRate) {
         result.shouldAct = true;
         result.decisionType = 'random';
-        result.reason = '随机触发';
+        result.reason = '<reason>随机触发</reason>';
         return result;
       }
 
-      result.reason = '未满足任何触发条件';
+      result.reason = '<reason>未满足任何触发条件</reason>';
       return result;
 
     } catch (error) {
       console.error('判断响应时出错:', error);
-      result.reason = '处理错误';
+      result.reason = '<reason>处理错误</reason>';
       return result;
     }
   }

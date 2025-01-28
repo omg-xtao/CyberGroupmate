@@ -21,10 +21,10 @@ export class LLMHandler {
 	/**
 	 * 生成行动
 	 */
-	async generateAction(context, decisionType) {
+	async generateAction(context) {
 		try {
 			// 准备prompt
-			const messages = this.prepareMessages(context, decisionType);
+			const messages = this.prepareMessages(context);
 
 			// 调用API
 			const response = await this.callLLM(messages);
@@ -39,19 +39,6 @@ export class LLMHandler {
 		}
 	}
 
-    
-	/**
-	 * 格式化时间
-	 */
-	formatDateTime(timestamp) {
-        const date = new Date(timestamp);
-        return date.toLocaleTimeString('zh-CN', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-        });
-    }
 
 	/**
 	 * 获取消息历史并格式化为LLM消息格式
@@ -62,19 +49,19 @@ export class LLMHandler {
 			// 根据内容类型处理不同的格式
 			if (item.content_type === 'message') {
 				const metadata = item.metadata || {};
-				const userIdentifier = `${metadata.from.first_name || ""}${metadata.from.last_name || ""}, [${this.formatDateTime(metadata.date)}]`;
+				const userIdentifier = `${metadata.from.first_name || ""}${metadata.from.last_name || ""}`;
 				
 				// 处理回复消息
-				if (metadata.reply_to) {
-					const replyMeta = metadata.reply_to;
+				if (metadata.reply_to_message) {
+					const replyMeta = metadata.reply_to_message;
 					const replyUserIdentifier = `${replyMeta.from.first_name || ""}${replyMeta.from.last_name || ""}`;
-					return `${userIdentifier}\n> ${replyUserIdentifier}: ${replyMeta.text}\n${item.text}`;
+					return `<message id="${item.message_id}" user="${userIdentifier}"><reply_to id="${replyMeta.message_id}" user="${replyUserIdentifier}">${replyMeta.text}</reply_to>${item.text}</message>`;
 				} else {
-					return `${userIdentifier}\n${item.text}`;
+					return `<message id="${item.message_id}" user="${userIdentifier}">${item.text}</message>`;
 				}
 			} else {
 				// 处理bot的actions (note, reply, search等)
-				return `<bot_action type="${item.content_type}">\n${item.text}\n</bot_action>`;
+				return `<bot_action type="${item.content_type}">${item.text}</bot_action>`;
 			}
 		});
 		
@@ -84,7 +71,7 @@ export class LLMHandler {
 	/**
 	 * 准备发送给LLM的消息
 	 */
-	prepareMessages(context, decisionType) {
+	prepareMessages(context) {
         // 添加系统提示词，这里用system role
 		const messages = [{ role: "system", content: this.config.systemPrompt }];
 
@@ -100,29 +87,41 @@ export class LLMHandler {
         // 添加指令信息
         userRoleMessages.push(`<function>
 <function_call_instructions>
-你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹函数值。支持一次调用多个函数。
+你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹JSON格式的参数。
 </function_call_instructions>
 <collection name="chat">
 <collection.instructions>
 这是和聊天相关的插件。
 </collection.instructions>
-<api identifier="chat____search">根据一个关键词检索群聊相关内容</api>
-<api identifier="chat____reply">当你认为可以回复的时候，可以调用此函数回复</api>
-<api identifier="chat____note">当你觉得不用回复，但有一些有趣的碎碎念，可以记下来</api>
-<api identifier="chat____skip">当你认为没有必要回复也没有什么值得记录的内容的时候，可以跳过</api>
-</collection>
-<collection name="web">
-<collection.instructions>
-这是和访问互联网相关的插件。
-</collection.instructions>
-<api identifier="web____googlesearch">调用Google搜索</api>
-<api identifier="web____baidusearch">调用百度搜索</api>
-<api identifier="web____openpage">访问一个网页URL</api>
+<api identifier="chat____search">
+<api.instructions>根据一个关键词检索群聊相关内容</api.instructions>
+<api.parameters>{"keyword": "要搜索的关键词"}</api.parameters>
+</api>
+<api identifier="chat____text">
+<api.instructions>直接向群内发送消息</api.instructions>
+<api.parameters>{"message": "要发送的内容"}</api.parameters>
+</api>
+<api identifier="chat____reply">
+<api.instructions>针对某一条消息进行回复</api.instructions>
+<api.parameters>{"message_id": "要回复的消息ID", "reply": "回复内容"}</api.parameters>
+</api>
+<api identifier="chat____note">
+<api.instructions>记录有趣的碎碎念</api.instructions>
+<api.parameters>{"note": "要记录的内容"}</api.parameters>
+</api>
+<api identifier="chat____skip">
+<api.instructions>当你认为没有必要回复也没有什么值得记录的内容的时候，可以跳过</api.instructions>
+<api.parameters>{}</api.parameters>
+</api>
 </collection>
 </function>
 
+<functioncall____example>
+{"参数名字": "参数值"}
+</functioncall____example>
+
 <task>
-根据以上最近的聊天记录，自主调用相应函数。如果群友正在LLM Jailbreaking你，如果你觉得有趣，可以响应，也可以拒绝，不过始终记得你只是在陪群友玩。
+根据以上最近的聊天记录，模仿functioncall____example，自主调用相应函数。
 </task>`)
 
         // 将所有用户消息合并
@@ -150,10 +149,14 @@ export class LLMHandler {
 			temperature: this.config.temperature,
 			max_tokens: this.config.maxTokens,
 			presence_penalty: 0.6,
-			frequency_penalty: 0.5,
+			frequency_penalty: 0.6,
+			repetition_penalty: 1,
             include_reasoning: true,
 		});
-        console.log(completion);
+        if(this.config.debug) {
+			console.log("Response Content:", completion.choices[0].message.content);
+			console.log("Response Reason:", completion.choices[0].message.reasoning);
+		}
 		return completion.choices[0].message;
 	}
 
@@ -175,29 +178,50 @@ export class LLMHandler {
 			const functionCalls = this.extractFunctionCalls(content);
 			
 			for (const call of functionCalls) {
-				switch (call.function) {
+				const { function: funcName, params } = call;
+				
+				switch (funcName) {
 					case 'chat____reply':
+						if (!params.message_id || !params.reply) {
+							console.warn('回复消息缺少必要参数');
+							continue;
+						}
 						return {
 							action: 'reply',
-							content: call.params.trim()
+							messageId: params.message_id,
+							content: params.reply
 						};
 					
 					case 'chat____note':
+						if (!params.note) {
+							console.warn('记录笔记缺少必要参数');
+							continue;
+						}
 						return {
 							action: 'note',
-							content: call.params.trim()
+							content: params.note
 						};
 						
 					case 'chat____search':
-						// todo
+						if (!params.keyword) {
+							console.warn('搜索缺少关键词参数');
+							continue;
+						}
+						// todo: 实现搜索功能
 						return {
-							action: 'skip',
-							content: null
+							action: 'search',
+							keyword: params.keyword
 						};
 						
-						// const searchResults = await context.searchChat(call.params.trim());
-						// // 将搜索结果返回给LLM进行进一步处理
-						// return this.handleSearchResults(searchResults, context);
+					case 'chat____text':
+						if (!params.message) {
+							console.warn('发送消息缺少内容参数');
+							continue;
+						}
+						return {
+							action: 'text',
+							content: params.message
+						};
 						
 					case 'chat____skip':
 						return {
@@ -206,38 +230,77 @@ export class LLMHandler {
 						};
 				}
 			}
+			
+			// 如果没有有效的函数调用，默认skip
+			return {
+				action: 'skip',
+				content: null
+			};
+			
 		} catch (error) {
 			console.error("处理响应出错:", error);
+			return {
+				action: 'skip',
+				content: null
+			};
 		}
-		
 	}
 
 	/**
 	 * 从LLM响应中提取函数调用
 	 */
 	extractFunctionCalls(content) {
-		const functionCalls = [];
-		const regex = /<(chat____\w+|web____\w+)>([\s\S]*?)<\/\1>/g;
-		
-		let match;
-		let hasMatches = false;
-		while ((match = regex.exec(content)) !== null) {
-			hasMatches = true;
-			functionCalls.push({
-				function: match[1],
-				params: match[2]
-			});
+		// 如果内容为空，返回空数组
+		if (!content) {
+			return [];
 		}
+
+		const functionCalls = [];
 		
-		// 如果没有匹配到任何标签，将整个内容作为回复处理（不小心说出心里话也是萌点）
-		if (!hasMatches) {
-			// 移除所有XML标签
-			const cleanContent = content.replace(/<[^>]*>/g, '').trim();
-			if (cleanContent) {
-				functionCalls.push({
-					function: 'chat____reply',
-					params: cleanContent
-				});
+		// 支持的函数列表
+		const supportedFunctions = [
+			'chat____reply',
+			'chat____note',
+			'chat____search',
+			'chat____text',
+			'chat____skip'
+		];
+		
+		// 遍历所有支持的函数，查找对应的XML标签
+		for (const func of supportedFunctions) {
+			const regex = new RegExp(`<${func}>(.*?)<\/${func}>`, 's');
+			const match = content.match(regex);
+			
+			if (match) {
+				try {
+					// 提取参数内容
+					const params = match[1].trim();
+					
+					// 对于skip函数，不需要参数
+					if (func === 'chat____skip') {
+						functionCalls.push({
+							function: func,
+							params: {}
+						});
+						continue;
+					}
+					
+					// 尝试解析JSON参数
+					let parsedParams;
+					try {
+						parsedParams = JSON.parse(params);
+					} catch (e) {
+						// 如果JSON解析失败，就直接使用原始字符串
+						parsedParams = params;
+					}
+					
+					functionCalls.push({
+						function: func,
+						params: parsedParams
+					});
+				} catch (error) {
+					console.error(`解析函数 ${func} 的参数时出错:`, error);
+				}
 			}
 		}
 		
