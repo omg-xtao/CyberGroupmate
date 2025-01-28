@@ -37,7 +37,7 @@ export class KuukiyomiHandler {
 
     try {
       // 1. 检查冷却时间
-      if (!this.checkCooldown(processedMsg.chatId)) {
+      if (!this.checkCooldown(processedMsg.chat_id)) {
         result.reason = '冷却时间内';
         return result;
       }
@@ -103,12 +103,12 @@ export class KuukiyomiHandler {
     const oneMinute = 60000;
 
     // 检查群组频率
-    if (msg.chatType !== 'private') {
-      const groupRates = this.messageRates.groups.get(msg.chatId) || [];
+    if (msg.metadata.chat.type !== 'private') {
+      const groupRates = this.messageRates.groups.get(msg.chat_id) || [];
       groupRates.push(now);
       // 只保留最近一分钟的消息
       const recentGroupRates = groupRates.filter(time => now - time < oneMinute);
-      this.messageRates.groups.set(msg.chatId, recentGroupRates);
+      this.messageRates.groups.set(msg.chat_id, recentGroupRates);
       
       if (recentGroupRates.length > this.config.groupRateLimit) {
         return false;
@@ -116,10 +116,10 @@ export class KuukiyomiHandler {
     }
 
     // 检查用户频率
-    const userRates = this.messageRates.users.get(msg.userId) || [];
+    const userRates = this.messageRates.users.get(msg.metadata.from.id) || [];
     userRates.push(now);
     const recentUserRates = userRates.filter(time => now - time < oneMinute);
-    this.messageRates.users.set(msg.userId, recentUserRates);
+    this.messageRates.users.set(msg.metadata.from.id, recentUserRates);
 
     return recentUserRates.length <= this.config.userRateLimit;
   }

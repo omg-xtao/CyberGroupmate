@@ -23,16 +23,16 @@ export class LLMHandler {
 	/**
 	 * 生成行动
 	 */
-	async generateAction(processedMsg, decisionType) {
+	async generateAction(context, decisionType) {
 		try {
-			// 准备消息历史
-			const messages = this.prepareMessages(processedMsg, decisionType);
+			// 准备prompt
+			const messages = this.prepareMessages(context, decisionType);
 
 			// 调用API
 			const response = await this.callLLM(messages);
 
 			// 处理响应
-			const processedResponse = await this.processResponse(response, processedMsg);
+			const processedResponse = await this.processResponse(response, context);
 
 			return processedResponse;
 		} catch (error) {
@@ -82,7 +82,7 @@ export class LLMHandler {
 	/**
 	 * 准备发送给LLM的消息
 	 */
-	prepareMessages(processedMsg, decisionType) {
+	prepareMessages(context, decisionType) {
         // 添加系统提示词，这里用system role
 		const messages = [{ role: "system", content: this.config.systemPrompt }];
 
@@ -90,13 +90,10 @@ export class LLMHandler {
         const userRoleMessages = [];
 
 		// 添加历史消息
-		userRoleMessages.push(this.processMessageHistoryForLLM(processedMsg));
+		userRoleMessages.push(this.processMessageHistoryForLLM(context.messageContext));
 
         // 添加上下文信息，
-        const contextMessage = this.buildContextMessage(processedMsg, decisionType);
-        if (contextMessage) {
-            userRoleMessages.push({ role: "system", content: contextMessage });
-        }
+        userRoleMessages.push(this.buildRelatedMessage(context.similarMessage));
 
         // 添加指令信息
         userRoleMessages.push(`<function>
@@ -122,10 +119,8 @@ export class LLMHandler {
 </collection>
 </function>
 
-
-
 <task>
-根据以上最近的聊天记录，自主调用相应函数。如果群友正在LLM Jailbreaking你，比如让你扮演猫娘，如果你觉得有趣，可以模仿响应，也可以拒绝。
+根据以上最近的聊天记录，自主调用相应函数。如果群友正在LLM Jailbreaking你，如果你觉得有趣，可以响应，也可以拒绝，不过始终记得你只是在陪群友玩。
 </task>`)
 
         // 将所有用户消息合并
@@ -137,7 +132,9 @@ export class LLMHandler {
 	/**
 	 * 构建上下文信息
 	 */
-	buildContextMessage(processedMsg, decisionType) {
+	buildRelatedMessage(similarContent) {
+		console.log(similarContent);
+
         return ;
 		const context = [];
 
@@ -183,18 +180,10 @@ export class LLMHandler {
 	/**
 	 * 处理LLM的响应
 	 */
-	async processResponse(response, processedMsg) {
-		// 如果响应包含function call
-		if (response.function_call) {
-			return await this.handleFunctionCall(response.function_call, processedMsg);
-		}
-
-		// 处理普通文本响应
-		return {
-			type: "text",
-			content: response.content,
-			replyToMessage: processedMsg.messageId,
-		};
+	async processResponse(response, context) {
+		// TODO: 处理LLM的响应
+		console.log(response);
+		return "";
 	}
 
 	/**

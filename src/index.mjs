@@ -5,6 +5,7 @@ import { dirname, join } from "path";
 import { TelegramHandler } from "./handlers/telegramHandler.mjs";
 import { KuukiyomiHandler } from "./handlers/kuukiyomi.mjs";
 import { LLMHandler } from "./handlers/llmHandler.mjs";
+import { RAGHelper } from "./helpers/ragHelper.mjs";
 
 // 设置 __dirname（在 ESM 中需要特殊处理）
 const __filename = fileURLToPath(import.meta.url);
@@ -48,14 +49,19 @@ const llmHandler = new LLMHandler(
 	{
 		model: process.env.OPENAI_MODEL,
         systemPrompt: `<personality>
-你是“Sanae Foundation”这个群聊的一名成员。这个群是一个喜欢轻松愉快的聊天群。群友们互相插科打诨、聊天，主要讨论生活、游戏还有科技，偶尔发一下福利图。
+你是"Sanae Foundation"这个群聊的一名成员。这个群是一个喜欢轻松愉快的聊天群。群友们互相插科打诨、聊天，主要讨论生活、游戏还有科技，偶尔发一下福利图。
 现在你也可以作为一名群员参与聊天。群友们知道你是大模型，大家叫你小D。
-你回复的时候要学会“读空气”（空気読み），不要回复无关紧要的话，除非你觉得你的话很有活。当然回复的时候也不能太正式，要符合群里的氛围。
+你回复的时候要学会"读空气"（空気読み），不要回复无关紧要的话，除非你觉得你的话很有活。当然回复的时候也不能太正式，要符合群里的氛围。
 回复的时候力求简短，每句话最好不超过10个字，否则看起来会像是在跟别人对线。如果要表达的意思超过10个字，请回车分段，这样可以让你看起来是在打字。
 </personality>`,
 		debug: config.debug,
 	}
 );
+
+// 创建 RAGHelper 实例
+const ragHelper = new RAGHelper({
+	debug: config.debug,
+});
 
 // 定期清理缓存
 setInterval(() => llmHandler.cleanupCache(), 3600000); // 每小时清理一次
@@ -72,22 +78,25 @@ bot.on("error", (error) => {
 // 处理消息
 bot.on("message", async (msg) => {
 	try {
+		
+		// 检查是否来自允许的群组
+		if (msg.chat.type !== "private" && !config.allowedGroups.includes(msg.chat.id)) {
+			if (config.debug) {
+		        //console.log(`消息来自未授权的群组 ${msg.chat.id}`);
+			}
+			return;
+		}
 		if (config.debug) {
 			console.log("收到消息:", msg);
 		}
 
-		// 检查是否来自允许的群组
-		if (msg.chat.type !== "private" && !config.allowedGroups.includes(msg.chat.id)) {
-			if (config.debug) {
-				console.log(`消息来自未授权的群组 ${msg.chat.id}`);
-			}
-			return;
-		}
-
-		// 使用 TelegramHandler 处理消息
+		// 使用 TelegramHandler 标准化消息
 		const processedMsg = await telegramHandler.handleMessage(msg);
 
 		if (!processedMsg) return;
+
+		// 保存Telegram消息
+		await ragHelper.saveMessage(processedMsg);
 
 		// 使用 Kuukiyomi 判断是否需要响应
 		const responseDecision = kuukiyomi.shouldAct(processedMsg);
@@ -97,21 +106,41 @@ bot.on("message", async (msg) => {
 		}
 
 		if (responseDecision.shouldAct) {
+			// 获取上下文信息
+			const [similarMessage, messageContext] = await Promise.all([
+				ragHelper.searchSimilarContent(msg.chat.id, processedMsg.text, {
+					limit: 5,
+					contentTypes: ['message', 'thought', 'search_result'],
+					timeWindow: '1 hour'  // 可以调整时间窗口
+				}),
+				ragHelper.getMessageContext(msg.chat.id, msg.message_id, 10)
+			]);
+			
 			// 生成行动
-			const action = await llmHandler.generateAction(processedMsg, responseDecision.decisionType);
+			const action = await llmHandler.generateAction(
+				{
+					similarMessage: similarMessage,
+					messageContext: messageContext
+				},
+				responseDecision.decisionType,
+			);
 
-			// 发送回复
+			// 处理行动
 			switch (action.type) {
 				case "text_reply":
-					console.log("发送文本回复:", response.content);
-					break;
 					await bot.sendMessage(msg.chat.id, action.content, {
 						reply_to_message_id: action.replyToMessage,
 					});
 					break;
-                case "note":
-                    console.log("记录想法:", action.content);
-                    break;
+				case "note":
+					// 保存bot的思考
+					await ragHelper.saveThought(
+						msg.chat.id,
+						action.content,
+						'thought',
+						msg.message_id
+					);
+					break;
 				default:
 					console.warn("未知的行动类型:", action.type);
 			}
