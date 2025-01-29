@@ -25,7 +25,7 @@ pnpm-lock.yaml
 Thumbs.db
 
 # 日志文件
-logs
+logs/*
 *.log
 
 # 运行时数据

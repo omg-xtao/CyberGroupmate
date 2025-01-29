@@ -110,15 +110,13 @@ export class RAGHelper {
     }
     
     // 保存bot的行动
-    async saveAction(chatId, text, type, relatedMessageId = null, additionalMetadata = {}) {
+    async saveAction(chatId, text, type, additionalMetadata = {}) {
         try {
             const embedding = await this.getEmbedding(text);
             if (!embedding) return false;
             
             const metadata = {
                 ...additionalMetadata,
-                related_message_id: relatedMessageId,
-                timestamp: new Date().toISOString()
             };
             
             const client = await this.pool.connect();

@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 export class LLMHandler {
 	constructor(config = {}) {
@@ -11,6 +13,7 @@ export class LLMHandler {
 			systemPrompt: config.systemPrompt,
 			...config,
 		};
+		this.botActionHelper = config.botActionHelper;
 		// 初始化OpenAI客户端
 		this.openai = new OpenAI({
 			apiKey: process.env.OPENAI_API_KEY,
@@ -28,11 +31,35 @@ export class LLMHandler {
 
 			// 调用API
 			const response = await this.callLLM(messages);
+			
+			// 保存日志到文件
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const logContent = [
+				// 输入消息
+				messages.map(msg => 
+					`--- ${msg.role} ---\n${msg.content}\n`
+				).join('\n'),
+				// 分隔线
+				'\n=== Response ===\n',
+				// 响应内容
+				`--- reasoning ---\n${response.reasoning || 'N/A'}\n`,
+				`--- content ---\n${response.content || 'N/A'}\n`
+			].join('\n');
+			
+			// 确保logs目录存在
+			await fs.mkdir('logs', { recursive: true });
+			
+			// 写入日志文件
+			await fs.writeFile(
+				path.join('logs', `${timestamp}.txt`),
+				logContent,
+				'utf-8'
+			);
 
 			// 处理响应
-			const processedResponse = await this.processResponse(response, context);
+			await this.processResponse(response, context);
 
-			return processedResponse;
+			return response;
 		} catch (error) {
 			console.error("生成行动出错:", error);
 			throw error;
@@ -87,7 +114,7 @@ export class LLMHandler {
         // 添加指令信息
         userRoleMessages.push(`<function>
 <function_call_instructions>
-你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹JSON格式的参数。
+你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹JSON格式的参数。一次可以调用多个函数。
 </function_call_instructions>
 <collection name="chat">
 <collection.instructions>
@@ -102,7 +129,7 @@ export class LLMHandler {
 <api.parameters>{"message": "要发送的内容"}</api.parameters>
 </api>
 <api identifier="chat____reply">
-<api.instructions>针对某一条消息进行回复</api.instructions>
+<api.instructions>针对某一条消息进行回复（推荐）</api.instructions>
 <api.parameters>{"message_id": "要回复的消息ID", "reply": "回复内容"}</api.parameters>
 </api>
 <api identifier="chat____note">
@@ -121,7 +148,7 @@ export class LLMHandler {
 </functioncall____example>
 
 <task>
-根据以上最近的聊天记录，模仿functioncall____example，自主调用相应函数。
+根据以上最近的聊天记录，注意观察bot_action标签，不要重复。模仿functioncall____example，自主调用相应一个或多个函数。
 </task>`)
 
         // 将所有用户消息合并
@@ -164,17 +191,12 @@ export class LLMHandler {
 	 * 处理LLM的响应
 	 */
 	async processResponse(response, context) {
-		const content = response.content;
+		// 将reasoning和content合并，允许在reasoning里输出函数调用
+		const content = response.reasoning + "\n" + response.content;
 		
-		if(!response.content) {
-			return {
-				action: 'skip',
-				content: null
-			};
-		}
+		if(!content) return;
 
 		try {
-			// 解析XML格式的函数调用
 			const functionCalls = this.extractFunctionCalls(content);
 			
 			for (const call of functionCalls) {
@@ -186,63 +208,46 @@ export class LLMHandler {
 							console.warn('回复消息缺少必要参数');
 							continue;
 						}
-						return {
-							action: 'reply',
-							messageId: params.message_id,
-							content: params.reply
-						};
+						await this.botActionHelper.sendReply(
+							context.chatId,
+							params.reply,
+							params.message_id
+						);
+						break;
 					
 					case 'chat____note':
 						if (!params.note) {
 							console.warn('记录笔记缺少必要参数');
 							continue;
 						}
-						return {
-							action: 'note',
-							content: params.note
-						};
+						await this.botActionHelper.saveNote(
+							context.chatId,
+							params.note,
+						);
+						break;
 						
 					case 'chat____search':
 						if (!params.keyword) {
 							console.warn('搜索缺少关键词参数');
 							continue;
 						}
-						// todo: 实现搜索功能
-						return {
-							action: 'search',
-							keyword: params.keyword
-						};
+						await this.botActionHelper.search(context.chatId, params.keyword);
+						break;
 						
 					case 'chat____text':
 						if (!params.message) {
 							console.warn('发送消息缺少内容参数');
 							continue;
 						}
-						return {
-							action: 'text',
-							content: params.message
-						};
-						
-					case 'chat____skip':
-						return {
-							action: 'skip',
-							content: null
-						};
+						await this.botActionHelper.sendText(
+							context.chatId,
+							params.message,
+						);
+						break;
 				}
 			}
-			
-			// 如果没有有效的函数调用，默认skip
-			return {
-				action: 'skip',
-				content: null
-			};
-			
 		} catch (error) {
 			console.error("处理响应出错:", error);
-			return {
-				action: 'skip',
-				content: null
-			};
 		}
 	}
 
@@ -257,53 +262,59 @@ export class LLMHandler {
 
 		const functionCalls = [];
 		
-		// 支持的函数列表
-		const supportedFunctions = [
-			'chat____reply',
-			'chat____note',
-			'chat____search',
-			'chat____text',
-			'chat____skip'
-		];
+		// 使用简单的XML标签匹配正则，只匹配开始标签
+		const tagRegex = /<([^>]+)>/g;
+		let match;
+		let position = 0;
 		
-		// 遍历所有支持的函数，查找对应的XML标签
-		for (const func of supportedFunctions) {
-			const regex = new RegExp(`<${func}>(.*?)<\/${func}>`, 's');
-			const match = content.match(regex);
-			
-			if (match) {
-				try {
-					// 提取参数内容
-					const params = match[1].trim();
-					
-					// 对于skip函数，不需要参数
-					if (func === 'chat____skip') {
-						functionCalls.push({
-							function: func,
-							params: {}
-						});
-						continue;
-					}
-					
-					// 尝试解析JSON参数
-					let parsedParams;
-					try {
-						parsedParams = JSON.parse(params);
-					} catch (e) {
-						// 如果JSON解析失败，就直接使用原始字符串
-						parsedParams = params;
-					}
-					
-					functionCalls.push({
-						function: func,
-						params: parsedParams
-					});
-				} catch (error) {
-					console.error(`解析函数 ${func} 的参数时出错:`, error);
-				}
+		while ((match = tagRegex.exec(content)) !== null) {
+			const tagName = match[1];
+			// 只处理我们支持的函数名
+			if (!tagName.startsWith('chat____')) {
+				continue;
 			}
+			
+			// 构建结束标签
+			const endTag = `</${tagName}>`;
+			// 找到结束标签的位置
+			const endPosition = content.indexOf(endTag, match.index);
+			if (endPosition === -1) continue;
+			
+			// 提取标签内的内容
+			const params = content.slice(match.index + match[0].length, endPosition).trim();
+			
+			try {
+				// 对于skip函数，不需要参数
+				if (tagName === 'chat____skip') {
+					functionCalls.push({
+						function: tagName,
+						params: {}
+					});
+					continue;
+				}
+				
+				// 尝试解析JSON参数
+				let parsedParams;
+				try {
+					parsedParams = JSON.parse(params);
+				} catch (e) {
+					// 如果JSON解析失败，就直接使用原始字符串
+					parsedParams = params;
+				}
+				
+				functionCalls.push({
+					function: tagName,
+					params: parsedParams
+				});
+			} catch (error) {
+				console.error(`解析函数 ${tagName} 的参数时出错:`, error);
+			}
+			
+			// 更新下一次搜索的起始位置
+			tagRegex.lastIndex = endPosition + endTag.length;
 		}
 		
+		if(this.config.debug) console.log(functionCalls);
 		return functionCalls;
 	}
 
