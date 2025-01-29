@@ -191,10 +191,6 @@ export class LLMHandler {
 			//repetition_penalty: 1,
             //include_reasoning: true,
 		});
-        if(this.config.debug) {
-			console.log("Response Content:", completion.choices[0].message.content);
-			console.log("Response Reason:", completion.choices[0].message.reasoning);
-		}
 		return completion.choices[0].message;
 	}
 

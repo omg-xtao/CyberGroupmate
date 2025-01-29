@@ -33,10 +33,19 @@ const bot = new TelegramBot(config.botToken, {
 	polling: true, // 使用轮询模式
 });
 
-// 在创建其他实例之前，添加状态变量
-let isProcessing = false;
-let pendingAction = null;
+// 将单个状态变量改为状态管理对象
+const chatStates = new Map();
 
+// 获取或创建聊天状态的辅助函数
+function getChatState(chatId) {
+	if (!chatStates.has(chatId)) {
+		chatStates.set(chatId, {
+			isProcessing: false,
+			pendingAction: null
+		});
+	}
+	return chatStates.get(chatId);
+}
 
 // 创建 RAGHelper 实例
 const ragHelper = new RAGHelper({
@@ -58,10 +67,12 @@ const telegramHandler = new TelegramHandler({
 
 // 创建 KuukiyomiHandler 实例
 const kuukiyomi = new KuukiyomiHandler({
-	cooldown: 3000, // 取消冷却时间
+	cooldown: 1000, // 冷却时间
 	triggerWords: ["小D", "小d"],
 	ignoreWords: [],
-	responseRate: 0.3,
+	responseRateMax: 1,
+	responseRateMin: 0.2,
+	initialResponseRate: 0.2,
 	...config,
 });
 
@@ -123,9 +134,10 @@ bot.on("message", async (msg) => {
 		}
 
 		if (responseDecision.shouldAct) {
-			if (isProcessing) {
-				// 如果当前正在处理消息，将新的处理请求存储为待处理
-				pendingAction = {
+			const chatState = getChatState(msg.chat.id);
+			if (chatState.isProcessing) {
+				// 将新的处理请求存储为待处理
+				chatState.pendingAction = {
 					chatId: msg.chat.id,
 					messageId: msg.message_id,
 					processedMsg,
@@ -146,8 +158,9 @@ bot.on("message", async (msg) => {
 
 // 添加消息处理函数
 async function processMessage(msg, processedMsg, responseDecision) {
+	const chatState = getChatState(msg.chat.id);
 	try {
-		isProcessing = true;
+		chatState.isProcessing = true;
 		
 		const [similarMessage, messageContext] = await Promise.all([
 			ragHelper.searchSimilarContent(msg.chat.id, processedMsg.text, {
@@ -165,12 +178,12 @@ async function processMessage(msg, processedMsg, responseDecision) {
 			responseDecision,
 		});
 	} finally {
-		isProcessing = false;
+		chatState.isProcessing = false;
 		
 		// 检查是否有待处理的消息
-		if (pendingAction) {
-			const { chatId, messageId, processedMsg, responseDecision } = pendingAction;
-			pendingAction = null;
+		if (chatState.pendingAction) {
+			const { chatId, messageId, processedMsg, responseDecision } = chatState.pendingAction;
+			chatState.pendingAction = null;
 			await processMessage({ chat: { id: chatId }, message_id: messageId }, processedMsg, responseDecision);
 		}
 	}

@@ -11,8 +11,11 @@ export class KuukiyomiHandler {
 			triggerWords: config.triggerWords || [],
 			// 忽略词
 			ignoreWords: config.ignoreWords || [],
-			// 响应概率 (0-1)
-			responseRate: config.responseRate || 0.3,
+			// 响应概率范围（0-1）
+			responseRateMax: config.responseRateMax || 0.5,
+			responseRateMin: config.responseRateMin || 0.1,
+			// 当前响应概率
+			currentResponseRate: config.initialResponseRate || 0.1,
 			...config,
 		};
 
@@ -23,6 +26,24 @@ export class KuukiyomiHandler {
 			groups: new Map(),
 			users: new Map(),
 		};
+
+		// 添加新的状态跟踪
+		this.stats = {
+			mentionCount: 0,        // 被提及次数
+			triggerWordCount: 0,    // 触发词出现次数
+			lastInteractionTime: Date.now(),  // 上次交互时间
+		};
+		
+		// 响应率调整参数
+		this.rateAdjustment = {
+			mentionMultiplier: 0.1,      // 每次被提及增加的基础值
+			triggerWordMultiplier: 0.1,  // 每次触发词出现增加的基础值
+			decayRate: 0.2,              // 每分钟衰减率
+			decayInterval: 10000,         // 衰减检查间隔（毫秒）
+		};
+
+		// 启动衰减计时器
+		this.startDecayTimer();
 	}
 
 	/**
@@ -37,18 +58,26 @@ export class KuukiyomiHandler {
 
 		try {
 			// 优先 检查是否被提及或回复
-			if (processedMsg.metadata.reply_to_message?.from?.id == this.config.botId || processedMsg.text?.includes(`@${this.config.botUsername}`)) {
+			if (processedMsg.metadata.reply_to_message?.from?.id == this.config.botId || 
+				processedMsg.text?.includes(`@${this.config.botUsername}`)) {
+				this.stats.mentionCount++;
+				this.stats.lastInteractionTime = Date.now(); // 更新主动交互时间
 				result.shouldAct = true;
 				result.decisionType = "mention";
 				result.scene = "当前唤起场景为被提及或回复";
+				this.adjustResponseRate(); // 调整响应率
 				return result;
 			}
+
 			// 优先 触发词
 			const matchedTriggerWord = this.checkTriggerWords(processedMsg.text);
 			if (matchedTriggerWord) {
+				this.stats.triggerWordCount++;
+				this.stats.lastInteractionTime = Date.now(); // 更新主动交互时间
 				result.shouldAct = true;
 				result.decisionType = "trigger";
 				result.scene = `当前唤起场景为触发词匹配："${matchedTriggerWord}"`;
+				this.adjustResponseRate(); // 调整响应率
 				return result;
 			}
 
@@ -71,14 +100,14 @@ export class KuukiyomiHandler {
 			}
 
 			// 6. 随机响应判断
-			if (Math.random() < this.config.responseRate) {
+			if (Math.random() < this.config.currentResponseRate) {
 				result.shouldAct = true;
 				result.decisionType = "random";
 				result.scene = "当前唤起场景为随机触发";
 				return result;
 			}
 
-			result.scene = "未满足任何触发条件";
+			result.scene = "未满足任何触发条件，当前响应概率为：" + this.config.currentResponseRate;
 			return result;
 		} catch (error) {
 			console.error("判断响应时出错:", error);
@@ -179,5 +208,45 @@ export class KuukiyomiHandler {
 				this.messageRates.users.set(userId, recentRates);
 			}
 		}
+	}
+
+	// 添加新方法：启动衰减计时器
+	startDecayTimer() {
+		setInterval(() => {
+			this.adjustResponseRate();
+		}, this.rateAdjustment.decayInterval);
+	}
+
+	// 添加新方法：计算响应率
+	calculateNewResponseRate() {
+		const timeSinceLastInteraction = (Date.now() - this.stats.lastInteractionTime) / 60000; // 转换为分钟
+		const decayFactor = Math.max(0, 1 - (timeSinceLastInteraction * this.rateAdjustment.decayRate));
+		
+		// 如果当前响应率已经降到最低，并且有新的主动交互，直接提升到最高响应率
+		if (this.config.currentResponseRate <= this.config.responseRateMin && 
+			(this.stats.mentionCount > 0 || this.stats.triggerWordCount > 0)) {
+			return this.config.responseRateMax;
+		}
+		
+		let newRate = this.config.currentResponseRate;
+		
+		// 根据统计数据调整响应率
+		newRate += this.stats.mentionCount * this.rateAdjustment.mentionMultiplier;
+		newRate += this.stats.triggerWordCount * this.rateAdjustment.triggerWordMultiplier;
+		
+		// 应用衰减
+		newRate *= decayFactor;
+		
+		// 确保在允许范围内
+		return Math.min(Math.max(newRate, this.config.responseRateMin), this.config.responseRateMax);
+	}
+
+	// 添加新方法：调整响应率
+	adjustResponseRate() {
+		this.config.currentResponseRate = this.calculateNewResponseRate();
+		
+		// 重置计数器
+		this.stats.mentionCount = 0;
+		this.stats.triggerWordCount = 0;
 	}
 }
