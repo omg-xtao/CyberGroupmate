@@ -7,7 +7,7 @@ export class LLMHandler {
 		this.config = {
 			// OpenAI配置
 			model: config.model,
-			temperature: config.temperature || 0.7,
+			temperature: config.temperature || 0.5,
 			maxTokens: config.maxTokens || 1000,
 			// 系统提示词
 			systemPrompt: config.systemPrompt,
@@ -94,11 +94,11 @@ export class LLMHandler {
 				}
 			} else {
 				// 处理bot的actions (note, reply, search等)
-				return `<bot_action type="${item.content_type}">${item.text}</bot_action>`;
+				return `<bot_${item.content_type}>${item.text}</bot_${item.content_type}>`;
 			}
 		});
 		
-		return "<chat_history>\n" + textHistory.join("\n") + "\n</chat_history>";
+		return textHistory.join("\n");
 	}
 
 	/**
@@ -111,11 +111,11 @@ export class LLMHandler {
         //从这里开始用 user role，所有消息先用回车分隔，最后再合并到 user role message 里
         const userRoleMessages = [];
 
-		// 添加历史消息
-		userRoleMessages.push(this.processMessageHistoryForLLM(context.messageContext));
+        // 添加近似RAG搜索结果，
+        userRoleMessages.push("<related_rag_search_result description='this is not latest history'>\n" + this.processMessageHistoryForLLM(context.similarMessage) + "\n</related_rag_search_result>");
 
-        // 添加上下文信息，
-        userRoleMessages.push(this.buildRelatedMessage(context.similarMessage));
+		// 添加历史消息
+		userRoleMessages.push("<chat_history>\n" + this.processMessageHistoryForLLM(context.messageContext) + "\n</chat_history>");
 
         // 添加指令信息
         userRoleMessages.push(`<function>
@@ -123,9 +123,6 @@ export class LLMHandler {
 你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹JSON格式的参数。一次可以调用多个函数。
 </function_call_instructions>
 <collection name="chat">
-<collection.instructions>
-这是和聊天相关的插件。
-</collection.instructions>
 <api identifier="chat____search">
 <api.instructions>根据一个关键词检索群聊相关内容</api.instructions>
 <api.parameters>{"keyword": "要搜索的关键词"}</api.parameters>
@@ -139,7 +136,7 @@ export class LLMHandler {
 <api.parameters>{"message_id": "要回复的消息ID", "reply": "回复内容"}</api.parameters>
 </api>
 <api identifier="chat____note">
-<api.instructions>记录有趣的碎碎念</api.instructions>
+<api.instructions>记录有趣的碎碎念或者重要的心理活动、记忆节点</api.instructions>
 <api.parameters>{"note": "要记录的内容"}</api.parameters>
 </api>
 <api identifier="chat____skip">
@@ -154,7 +151,14 @@ export class LLMHandler {
 </functioncall____example>
 
 <task>
-根据以上最近的聊天记录，注意观察bot_action标签，不要重复回应。模仿functioncall____example，自主调用相应一个或多个函数。
+首先进行思考，每段思考不少于100字：
+1. 你现在要处理哪些关键消息？这些消息是否有与你有关，你是否有必要回复？
+2. 回顾一下之前的对话，根据上文的bot_标签，是否已经回应过了，不应重复回应。
+3. 查阅RAG搜索结果，是否有相关信息？
+4. 群里面可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
+5. 根据你的角色设定，你应该做什么？
+
+然后模仿functioncall____example，自主调用相应一个或多个函数。
 </task>`)
 
         // 将所有用户消息合并
@@ -183,8 +187,8 @@ export class LLMHandler {
 			max_tokens: this.config.maxTokens,
 			presence_penalty: 0.6,
 			frequency_penalty: 0.6,
-			repetition_penalty: 1,
-            include_reasoning: true,
+			//repetition_penalty: 1,
+            //include_reasoning: true,
 		});
         if(this.config.debug) {
 			console.log("Response Content:", completion.choices[0].message.content);
