@@ -115,7 +115,7 @@ export class KuukiyomiHandler {
 			if (Math.random() < this.config.currentResponseRate) {
 				result.shouldAct = true;
 				result.decisionType = "random";
-				result.scene = "当前唤起场景为随机触发";
+				result.scene = "当前唤起场景为随机触发，请谨慎发言，避免打扰。";
 				return result;
 			}
 

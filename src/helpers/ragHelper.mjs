@@ -192,7 +192,8 @@ export class RAGHelper {
         const {
             limit = 5,
             contentTypes = [],
-            timeWindow = '7 days'
+            timeWindow = '99 years',
+            withContext = 0  // 新增参数，默认为0表示不获取上下文
         } = options;
         
         try {
@@ -216,8 +217,23 @@ export class RAGHelper {
                 LIMIT $5`,
                 [queryEmbedding, chatId, contentTypes, timeWindow, limit]
             );
+
+            // 如果需要上下文，则为每个结果获取上下文
+            if (withContext > 0) {
+                const resultsWithContext = await Promise.all(
+                    result.rows.map(async (row) => {
+                        if (row.message_id || row.metadata.related_message_id) {
+                            const context = await this.getMessageContext(chatId, row.message_id || row.metadata.related_message_id, withContext);
+                            return context;
+                        }
+                        return [row];
+                    })
+                );
+                client.release();
+                return resultsWithContext.flat(1);
+            }
+
             client.release();
-            
             return result.rows;
         } catch (error) {
             console.error('搜索相似内容错误:', error);

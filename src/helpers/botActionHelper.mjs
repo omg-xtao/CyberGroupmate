@@ -23,7 +23,11 @@ export class BotActionHelper {
     }
 
     async search(chatId, keyword) {
-        // todo: 实现搜索功能
-        return [];
+        const searchResults = await this.ragHelper.searchSimilarContent(chatId, keyword, {
+            limit: 5,
+            contentTypes: ["message", "reply"],
+            withContext: 3,
+        });
+        return searchResults;
     }
 } 
