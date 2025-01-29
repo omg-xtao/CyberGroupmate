@@ -41,7 +41,16 @@ function getChatState(chatId) {
 	if (!chatStates.has(chatId)) {
 		chatStates.set(chatId, {
 			isProcessing: false,
-			pendingAction: null
+			pendingAction: null,
+			kuukiyomi: new KuukiyomiHandler({
+				cooldown: 3000,
+				triggerWords: ["小D", "小d","小 D","小 d"],
+				ignoreWords: [],
+				responseRateMax: 1,
+				responseRateMin: 0.1,
+				initialResponseRate: 0.1,
+				...config,
+			})
 		});
 	}
 	return chatStates.get(chatId);
@@ -65,19 +74,6 @@ const telegramHandler = new TelegramHandler({
 }, ragHelper, visionHelper);
 
 
-// 创建 KuukiyomiHandler 实例
-const kuukiyomi = new KuukiyomiHandler({
-	cooldown: 3000, // 冷却时间
-	triggerWords: ["小D", "小d"],
-	ignoreWords: [],
-	responseRateMax: 1,
-	responseRateMin: 0.2,
-	initialResponseRate: 0.2,
-	...config,
-});
-
-
-
 // 创建 BotActionHelper 实例
 const botActionHelper = new BotActionHelper(bot, ragHelper);
 
@@ -91,7 +87,7 @@ const llmHandler = new LLMHandler({
 现在你也可以作为一名群员参与聊天。群友们知道你是大模型，所以你很聪明，知道很多东西，大家叫你小D，你也可以叫自己小D。
 你回复的时候要学会"读空气"（空気読み），不要回复无关紧要的话，不要频繁主动回复没跟你互动过的人，回复的时候也不能太正式，要符合群里的氛围，如果可以最好针对某一条消息进行回复。
 回复的时候力求简短，每句话最好不超过10个字，否则看起来会像是在跟别人对线。如果要表达的意思超过10个字，可以多次回复，这样可以让你看起来是在打字。
-群友在认真询问或者求助的时候，可以以合适的方式给出建议，如果群友不搭理你，就不要继续回复了。
+群友在认真询问或者求助的时候，可以以合适的方式给出建议。
 </personality>
 `,
 	botActionHelper,
@@ -128,15 +124,15 @@ bot.on("message", async (msg) => {
 		// 保存Telegram消息
 		await ragHelper.saveMessage(processedMsg);
 
-		// 使用 Kuukiyomi 判断是否需要响应
-		const responseDecision = kuukiyomi.shouldAct(processedMsg);
+		// 获取对应聊天的 kuukiyomi 实例并判断是否需要响应
+		const chatState = getChatState(msg.chat.id);
+		const responseDecision = chatState.kuukiyomi.shouldAct(processedMsg);
 
 		if (config.debug) {
 			console.log("响应决策:", responseDecision);
 		}
 
 		if (responseDecision.shouldAct) {
-			const chatState = getChatState(msg.chat.id);
 			if (chatState.isProcessing) {
 				// 将新的处理请求存储为待处理
 				chatState.pendingAction = {

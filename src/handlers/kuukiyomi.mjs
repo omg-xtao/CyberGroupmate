@@ -57,6 +57,18 @@ export class KuukiyomiHandler {
 		};
 
 		try {
+			console.log("当前响应概率为：" + this.config.currentResponseRate);
+
+			if(processedMsg.metadata.chat.type == "private") {
+				this.stats.mentionCount++;
+				this.stats.lastInteractionTime = Date.now(); // 更新主动交互时间
+				result.shouldAct = true;
+				result.decisionType = "private";
+				result.scene = "当前唤起场景为私聊";
+				this.adjustResponseRate(); // 调整响应率
+				return result;
+			}
+
 			// 优先 检查是否被提及或回复
 			if (processedMsg.metadata.reply_to_message?.from?.id == this.config.botId || 
 				processedMsg.text?.includes(`@${this.config.botUsername}`)) {
@@ -107,7 +119,7 @@ export class KuukiyomiHandler {
 				return result;
 			}
 
-			result.scene = "未满足任何触发条件，当前响应概率为：" + this.config.currentResponseRate;
+			result.scene = "未满足任何触发条件";
 			return result;
 		} catch (error) {
 			console.error("判断响应时出错:", error);

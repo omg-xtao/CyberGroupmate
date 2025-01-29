@@ -29,8 +29,17 @@ export class LLMHandler {
 			// 准备prompt
 			const messages = this.prepareMessages(context);
 
+			// 创建一个间隔发送打字状态的定时器，并在60秒后自动清除
+			let typingInterval = setInterval(async () => {
+				await this.botActionHelper.setTyping(context.chatId);
+			}, 5000);
+			setTimeout(() => clearInterval(typingInterval), 60000);
+
 			// 调用API
 			const response = await this.callLLM(messages);
+			
+			// 获得响应后清除定时器
+			clearInterval(typingInterval);
 			
 			// 保存日志到文件
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -153,10 +162,10 @@ export class LLMHandler {
 <task>
 首先进行思考，每段思考不少于100字：
 1. 当前唤起场景为${context.responseDecision.scene}
-2. 你现在要处理哪些关键消息？这些消息是否有与你有关，你是否有必要回复？
-3. 回顾一下之前的对话，根据上文的bot_标签，是否已经回应过了，严禁复读（不要提供相似回应）。
-4. 查阅RAG搜索结果，是否有相关信息？
-5. 群里面可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
+2. 群里面可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
+3. 你现在要回复哪个话题？群友有没有和你互动过？如果群友不搭理你，就不要继续回复了
+4. 回顾一下之前的对话，根据上文的bot_标签，是否已经回应过了，严禁复读（不要提供相似回应）。
+5. 查阅RAG搜索结果，是否有相关信息？
 6. 根据你的角色设定，你应该做什么？
 
 然后模仿functioncall____example，自主调用相应一个或多个函数。
