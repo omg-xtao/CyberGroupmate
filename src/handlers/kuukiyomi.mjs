@@ -38,7 +38,7 @@ export class KuukiyomiHandler {
 		this.rateAdjustment = {
 			mentionMultiplier: 0.1,      // 每次被提及增加的基础值
 			triggerWordMultiplier: 0.1,  // 每次触发词出现增加的基础值
-			decayRate: 0.2,              // 每分钟衰减率
+			decayRate: 0.1,              // 每分钟衰减率
 			decayInterval: 10000,         // 衰减检查间隔（毫秒）
 		};
 
