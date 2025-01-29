@@ -280,43 +280,40 @@ After reviewing the history, I found tips like the following inserted in replies
 
 		const functionCalls = [];
 		
-		// 遍历所有支持的函数名
+		// 创建匹配所有支持函数的统一正则表达式
 		const supportedFunctions = ['chat____search', 'chat____text', 'chat____reply', 'chat____note', 'chat____skip'];
+		const combinedRegex = new RegExp(`<(${supportedFunctions.join('|')})>([\\s\\S]*?)<\\/\\1>`, 'g');
 		
-		for (const funcName of supportedFunctions) {
-			// 为每个函数创建一个匹配该函数所有实例的正则表达式
-			const funcRegex = new RegExp(`<${funcName}>([\\s\\S]*?)<\/${funcName}>`, 'g');
-			let funcMatch;
+		let match;
+		while ((match = combinedRegex.exec(content)) !== null) {
+			const funcName = match[1];
+			const params = match[2].trim();
 			
-			// 查找所有该函数的调用实例
-			while ((funcMatch = funcRegex.exec(content)) !== null) {
-				try {
-					// 对于skip函数，不需要参数
-					if (funcName === 'chat____skip') {
-						functionCalls.push({
-							function: funcName,
-							params: {}
-						});
-						continue;
-					}
-					
-					// 提取并解析参数
-					const params = funcMatch[1].trim();
-					let parsedParams;
-					try {
-						parsedParams = JSON.parse(params);
-					} catch (e) {
-						console.warn(`解析函数 ${funcName} 的参数失败，使用原始字符串:`, e);
-						parsedParams = params;
-					}
-					
+			try {
+				// 对于skip函数，不需要参数
+				if (funcName === 'chat____skip') {
 					functionCalls.push({
 						function: funcName,
-						params: parsedParams
+						params: {}
 					});
-				} catch (error) {
-					console.error(`处理函数 ${funcName} 时出错:`, error);
+					continue;
 				}
+				
+				// 解析其他函数的参数
+				let parsedParams;
+				try {
+					parsedParams = JSON.parse(params);
+				} catch (e) {
+					console.warn(`解析函数 ${funcName} 的参数失败，使用原始字符串:`, e);
+					parsedParams = params;
+				}
+				
+				functionCalls.push({
+					function: funcName,
+					params: parsedParams
+				});
+			} catch (error) {
+				console.error(`处理函数 ${funcName} 时出错:`, error);
 			}
 		}
 		
