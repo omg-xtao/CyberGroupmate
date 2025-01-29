@@ -56,6 +56,12 @@ export class LLMHandler {
 				'utf-8'
 			);
 
+			// 保存碎碎念
+			await this.botActionHelper.sendText(process.env.MEMO_CHANNEL_ID, [
+				`--- reasoning ---\n${response.reasoning || 'N/A'}\n`,
+				`--- content ---\n${response.content || 'N/A'}\n`
+			].join('\n'), false);
+
 			// 处理响应
 			await this.processResponse(response, context);
 
@@ -148,7 +154,7 @@ export class LLMHandler {
 </functioncall____example>
 
 <task>
-根据以上最近的聊天记录，注意观察bot_action标签，不要重复。模仿functioncall____example，自主调用相应一个或多个函数。
+根据以上最近的聊天记录，注意观察bot_action标签，不要重复回应。模仿functioncall____example，自主调用相应一个或多个函数。
 </task>`)
 
         // 将所有用户消息合并

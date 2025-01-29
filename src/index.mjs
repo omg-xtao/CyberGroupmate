@@ -46,7 +46,7 @@ const kuukiyomi = new KuukiyomiHandler({
 	cooldown: 3000, // 3秒冷却时间
 	triggerWords: ["小D", "小d"],
 	ignoreWords: [],
-	responseRate: 0.8,
+	responseRate: 0.5,
 	...config,
 });
 
@@ -142,7 +142,7 @@ async function processMessage(msg, processedMsg) {
 				contentTypes: [],
 				timeWindow: "1 hour",
 			}),
-			ragHelper.getMessageContext(msg.chat.id, msg.message_id, 50),
+			ragHelper.getMessageContext(msg.chat.id, msg.message_id, 25),
 		]);
 
 		await llmHandler.generateAction({

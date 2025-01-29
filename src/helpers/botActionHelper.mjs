@@ -4,14 +4,14 @@ export class BotActionHelper {
         this.ragHelper = ragHelper;
     }
 
-    async sendText(chatId, content) {
+    async sendText(chatId, content, log = true) {
         await this.bot.sendMessage(chatId, content);
-        await this.ragHelper.saveAction(chatId, content, "text");
+        if (log) await this.ragHelper.saveAction(chatId, content, "text");
     }
 
-    async sendReply(chatId, content, replyToMessageId) {
+    async sendReply(chatId, content, replyToMessageId, log = true) {
         await this.bot.sendMessage(chatId, content, { reply_to_message_id: replyToMessageId });
-        await this.ragHelper.saveAction(chatId, content, "reply", { reply_to_message_id: replyToMessageId });
+        if (log) await this.ragHelper.saveAction(chatId, content, "reply", { reply_to_message_id: replyToMessageId });
     }
 
     async saveNote(chatId, content, messageId) {

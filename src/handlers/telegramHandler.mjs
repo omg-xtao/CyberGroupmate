@@ -51,7 +51,9 @@ export class TelegramHandler {
                     from: {
                         id: telegramMsg.reply_to_message.from.id,
                         is_bot: telegramMsg.reply_to_message.from.is_bot,
-                        username: telegramMsg.reply_to_message.from.username,
+                        username: telegramMsg.reply_to_message.from.username || '',
+                        first_name: telegramMsg.reply_to_message.from.first_name || '',
+                        last_name: telegramMsg.reply_to_message.from.last_name || '',
                     },
                 };
             }
@@ -61,8 +63,9 @@ export class TelegramHandler {
                 standardizedMsg.metadata.forward_from = {
                     id: telegramMsg.forward_from.id,
                     is_bot: telegramMsg.forward_from.is_bot,
-                    first_name: telegramMsg.forward_from.first_name,
-                    username: telegramMsg.forward_from.username,
+                    username: telegramMsg.forward_from.username || '',
+                    first_name: telegramMsg.forward_from.first_name || '',
+                    last_name: telegramMsg.forward_from.last_name || '',
                 };
                 standardizedMsg.metadata.forward_date = new Date(telegramMsg.forward_date * 1000).toISOString();
             }
