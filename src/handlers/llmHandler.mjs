@@ -152,11 +152,12 @@ export class LLMHandler {
 
 <task>
 首先进行思考，每段思考不少于100字：
-1. 你现在要处理哪些关键消息？这些消息是否有与你有关，你是否有必要回复？
-2. 回顾一下之前的对话，根据上文的bot_标签，是否已经回应过了，不应重复回应。
-3. 查阅RAG搜索结果，是否有相关信息？
-4. 群里面可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
-5. 根据你的角色设定，你应该做什么？
+1. 当前唤起场景为${context.responseDecision.scene}
+2. 你现在要处理哪些关键消息？这些消息是否有与你有关，你是否有必要回复？
+3. 回顾一下之前的对话，根据上文的bot_标签，是否已经回应过了，不应重复回应。
+4. 查阅RAG搜索结果，是否有相关信息？
+5. 群里面可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
+6. 根据你的角色设定，你应该做什么？
 
 然后模仿functioncall____example，自主调用相应一个或多个函数。
 </task>`)
@@ -284,11 +285,14 @@ export class LLMHandler {
 				continue;
 			}
 			
-			// 构建结束标签
-			const endTag = `</${tagName}>`;
-			// 找到结束标签的位置
-			const endPosition = content.indexOf(endTag, match.index);
-			if (endPosition === -1) continue;
+			// 宽松匹配，寻找下一个以</开头的标签作为结束标签
+			const endTagRegex = /<\/[^>]+>/;
+			const remainingContent = content.slice(match.index);
+			const endTagMatch = remainingContent.match(endTagRegex);
+			
+			if (!endTagMatch) continue;
+			
+			const endPosition = match.index + endTagMatch.index;
 			
 			// 提取标签内的内容
 			const params = content.slice(match.index + match[0].length, endPosition).trim();
@@ -321,7 +325,7 @@ export class LLMHandler {
 			}
 			
 			// 更新下一次搜索的起始位置
-			tagRegex.lastIndex = endPosition + endTag.length;
+			tagRegex.lastIndex = endPosition + endTagMatch.index;
 		}
 		
 		if(this.config.debug) console.log(functionCalls);

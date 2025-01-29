@@ -1,6 +1,8 @@
 export class TelegramHandler {
-    constructor(config = {}) {
+    constructor(config = {}, ragHelper, visionHelper) {
         this.debug = config.debug || false;
+        this.ragHelper = ragHelper;
+        this.visionHelper = visionHelper;
     }
 
     /**
@@ -11,7 +13,7 @@ export class TelegramHandler {
     async handleMessage(telegramMsg) {
         try {
             // 基础消息检查
-            if (!telegramMsg || !telegramMsg.text) {
+            if (!telegramMsg || !telegramMsg.text && !telegramMsg.photo) {
                 return null;
             }
 
@@ -76,12 +78,76 @@ export class TelegramHandler {
                 standardizedMsg.metadata.media_type = telegramMsg.photo ? 'photo' : 
                                                     telegramMsg.video ? 'video' : 
                                                     'document';
+                
+                // 即时处理：优先使用 caption，如果没有则使用默认文本
+                standardizedMsg.text = telegramMsg.caption || '[图片]';
+                standardizedMsg.metadata.has_caption = !!telegramMsg.caption;
+
+                // 如果是图片，记录图片信息供异步处理使用
+                if (telegramMsg.photo) {
+                    // 获取最高质量的图片
+                    const photo = telegramMsg.photo[telegramMsg.photo.length - 1];
+                    standardizedMsg.metadata.media = {
+                        file_id: photo.file_id,
+                        file_unique_id: photo.file_unique_id,
+                        width: photo.width,
+                        height: photo.height,
+                        file_size: photo.file_size
+                    };
+                    
+                    // 异步处理图片
+                    this.processImageAsync(standardizedMsg);
+                }
             }
 
             return standardizedMsg;
         } catch (error) {
             console.error('处理消息时出错:', error);
             return null;
+        }
+    }
+
+    /**
+     * 异步处理图片
+     * @param {Object} standardizedMsg - 标准化的消息对象
+     */
+    async processImageAsync(standardizedMsg) {
+        try {
+            // 获取图片描述
+            const imageDescription = await this.visionHelper.analyzeImage(standardizedMsg.metadata.media.file_id);
+            
+            // 构建更新后的消息内容
+            let updatedText;
+            if (standardizedMsg.metadata.has_caption) {
+                // 如果有 caption，保留原文并添加图片描述
+                updatedText = `${standardizedMsg.text}\n[图片描述: ${imageDescription}]`;
+            } else {
+                // 如果没有 caption（即原文是[图片]），则只使用图片描述
+                updatedText = `[图片描述: ${imageDescription}]`;
+            }
+
+            // 使用 RAG 助手更新消息
+            await this.ragHelper.updateMessage({
+                ...standardizedMsg,
+                text: updatedText,
+                metadata: {
+                    ...standardizedMsg.metadata,
+                    image_description: imageDescription,
+                    processed_at: new Date().toISOString()
+                }
+            });
+
+        } catch (error) {
+            console.error('异步处理图片失败:', error);
+            // 即使处理失败也要更新 RAG，记录错误信息
+            await this.ragHelper.updateMessage({
+                ...standardizedMsg,
+                metadata: {
+                    ...standardizedMsg.metadata,
+                    image_analysis_error: error.message,
+                    processed_at: new Date().toISOString()
+                }
+            });
         }
     }
 }

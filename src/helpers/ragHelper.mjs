@@ -224,4 +224,48 @@ export class RAGHelper {
             return [];
         }
     }
+
+    /**
+     * 更新已存在的消息
+     * @param {Object} standardizedMsg - 标准化的消息对象
+     * @returns {Promise<boolean>} 更新是否成功
+     */
+    async updateMessage(standardizedMsg) {
+        try {
+            const {
+                chat_id,
+                message_id,
+                text,
+                content_type,
+                metadata
+            } = standardizedMsg;
+            
+            if (!text) return false;
+            
+            // 获取新的 embedding
+            const embedding = await this.getEmbedding(text);
+            if (!embedding) return false;
+            
+            const client = await this.pool.connect();
+            
+            // 使用 chat_id 和 message_id 定位并更新消息
+            await client.query(
+                `UPDATE chat_memories 
+                SET text = $1,
+                    metadata = $2,
+                    embedding = $3::vector,
+                    content_type = $4
+                WHERE chat_id = $5 AND message_id = $6`,
+                [text, metadata, embedding, content_type, chat_id, message_id]
+            );
+            
+            client.release();
+            
+            if (this.debug) console.log('消息已更新');
+            return true;
+        } catch (error) {
+            console.error('更新消息错误:', error);
+            return false;
+        }
+    }
 }

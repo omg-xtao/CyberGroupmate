@@ -7,6 +7,7 @@ import { KuukiyomiHandler } from "./handlers/kuukiyomi.mjs";
 import { LLMHandler } from "./handlers/llmHandler.mjs";
 import { RAGHelper } from "./helpers/ragHelper.mjs";
 import { BotActionHelper } from "./helpers/botActionHelper.mjs";
+import { VisionHelper } from "./helpers/visionHelper.mjs";
 
 // 设置 __dirname（在 ESM 中需要特殊处理）
 const __filename = fileURLToPath(import.meta.url);
@@ -36,25 +37,35 @@ const bot = new TelegramBot(config.botToken, {
 let isProcessing = false;
 let pendingAction = null;
 
-// 创建 TelegramHandler 实例
-const telegramHandler = new TelegramHandler({
-	...config,
-});
-
-// 创建 KuukiyomiHandler 实例
-const kuukiyomi = new KuukiyomiHandler({
-	cooldown: 3000, // 3秒冷却时间
-	triggerWords: ["小D", "小d"],
-	ignoreWords: [],
-	responseRate: 0.7,
-	...config,
-});
-
 
 // 创建 RAGHelper 实例
 const ragHelper = new RAGHelper({
 	...config,
 });
+
+
+// 创建 VisionHelper 实例
+const visionHelper = new VisionHelper({
+	...config,
+}, bot);
+
+
+// 创建 TelegramHandler 实例
+const telegramHandler = new TelegramHandler({
+	...config,
+}, ragHelper, visionHelper);
+
+
+// 创建 KuukiyomiHandler 实例
+const kuukiyomi = new KuukiyomiHandler({
+	cooldown: 3000, // 取消冷却时间
+	triggerWords: ["小D", "小d"],
+	ignoreWords: [],
+	responseRate: 0.3,
+	...config,
+});
+
+
 
 // 创建 BotActionHelper 实例
 const botActionHelper = new BotActionHelper(bot, ragHelper);
@@ -63,11 +74,11 @@ const botActionHelper = new BotActionHelper(bot, ragHelper);
 const llmHandler = new LLMHandler({
 	model: process.env.OPENAI_MODEL,
 	systemPrompt: `<personality>
-你是群聊的一名成员。这个群是一个喜欢轻松愉快的聊天群。群友们互相插科打诨、聊天，主要讨论ACGN、科技还有生活，偶尔发一下二三次元的福利图。
-现在你也可以作为一名群员参与聊天。群友们知道你是大模型，所以你很聪明，大家叫你小D，你也可以叫自己小D。
-你回复的时候要学会"读空气"（空気読み），不要回复无关紧要的话，不懂的就不要说，不要频繁主动回复没跟你互动过的人，回复的时候也不能太正式，要符合群里的氛围，如果可以最好针对某一条消息进行回复。
+你是群聊的一名成员。这个群是一个轻松愉快的成年人聊天群。群友们互相插科打诨、聊天，主要讨论ACGN、科技还有生活，偶尔发一下二三次元的福利图，由于群规没有禁止发色图或者其他成人内容，如果涉及相关信息，请勿回避讨论。
+现在你也可以作为一名群员参与聊天。群友们知道你是大模型，所以你很聪明，知道很多东西，大家叫你小D，你也可以叫自己小D。
+你回复的时候要学会"读空气"（空気読み），不要回复无关紧要的话，不要频繁主动回复没跟你互动过的人，回复的时候也不能太正式，要符合群里的氛围，如果可以最好针对某一条消息进行回复。
 回复的时候力求简短，每句话最好不超过10个字，否则看起来会像是在跟别人对线。如果要表达的意思超过10个字，可以多次回复，这样可以让你看起来是在打字。
-群友在认真询问或者求助的时候，可以以合适的方式给出建议。
+群友在认真询问或者求助的时候，可以以合适的方式给出建议，如果群友不搭理你，就不要继续回复了。
 </personality>
 `,
 	botActionHelper,
@@ -117,12 +128,13 @@ bot.on("message", async (msg) => {
 				pendingAction = {
 					chatId: msg.chat.id,
 					messageId: msg.message_id,
-					processedMsg
+					processedMsg,
+					responseDecision,
 				};
 				return;
 			}
 
-			await processMessage(msg, processedMsg);
+			await processMessage(msg, processedMsg, responseDecision);
 		}
 	} catch (error) {
 		console.error("消息处理错误:", error);
@@ -133,7 +145,7 @@ bot.on("message", async (msg) => {
 });
 
 // 添加消息处理函数
-async function processMessage(msg, processedMsg) {
+async function processMessage(msg, processedMsg, responseDecision) {
 	try {
 		isProcessing = true;
 		
@@ -150,15 +162,16 @@ async function processMessage(msg, processedMsg) {
 			similarMessage,
 			messageContext,
 			chatId: msg.chat.id,
+			responseDecision,
 		});
 	} finally {
 		isProcessing = false;
 		
 		// 检查是否有待处理的消息
 		if (pendingAction) {
-			const { chatId, messageId, processedMsg } = pendingAction;
+			const { chatId, messageId, processedMsg, responseDecision } = pendingAction;
 			pendingAction = null;
-			await processMessage({ chat: { id: chatId }, message_id: messageId }, processedMsg);
+			await processMessage({ chat: { id: chatId }, message_id: messageId }, processedMsg, responseDecision);
 		}
 	}
 }
