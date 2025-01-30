@@ -1,8 +1,63 @@
+import ogs from 'open-graph-scraper';
+
 export class TelegramHandler {
     constructor(config = {}, ragHelper, visionHelper) {
         this.debug = config.debug || false;
         this.ragHelper = ragHelper;
         this.visionHelper = visionHelper;
+    }
+
+    /**
+     * 解析文本中的 URL 并获取 Open Graph 数据
+     * @param {string} text - 包含 URL 的文本
+     * @returns {Promise<string>} 解析后的文本
+     */
+    async parseUrls(text) {
+        try {
+            // 使用正则表达式匹配 URL
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const urls = text.match(urlRegex);
+            
+            if (!urls) return text;
+
+            let resultText = text;
+            
+            // 只处理前3个URL
+            const urlsToProcess = urls.slice(0, 3);
+            
+            // 处理每个 URL
+            for (const url of urlsToProcess) {
+                try {
+                    const options = { 
+                        url,
+                        timeout: 2000, // 2秒超时
+                        fetchOptions: {
+                            headers: {
+                                'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                            }
+                        }
+                    };
+                    
+                    const { result } = await ogs(options);
+                    
+                    if (result.success) {
+                        let ogInfo = '\n[链接预览]\n';
+                        if (result.ogTitle) ogInfo += `标题: ${result.ogTitle}\n`;
+                        if (result.ogDescription) ogInfo += `描述: ${result.ogDescription}\n`;
+                        
+                        // 将 URL 替换为 URL + Open Graph 信息
+                        resultText = resultText.replace(url, `${url}${ogInfo}`);
+                    }
+                } catch (urlError) {
+                    console.error(`解析 URL 失败: ${url}`, urlError);
+                }
+            }
+            
+            return resultText;
+        } catch (error) {
+            console.error('URL 解析过程出错:', error);
+            return text;
+        }
     }
 
     /**
@@ -98,6 +153,11 @@ export class TelegramHandler {
                     // 异步处理图片
                     this.processImageAsync(standardizedMsg);
                 }
+            }
+
+            // 在返回之前解析消息中的 URL
+            if (standardizedMsg.text) {
+                standardizedMsg.text = await this.parseUrls(standardizedMsg.text);
             }
 
             return standardizedMsg;

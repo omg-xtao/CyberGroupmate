@@ -36,10 +36,10 @@ export class KuukiyomiHandler {
 		
 		// 响应率调整参数
 		this.rateAdjustment = {
-			mentionMultiplier: 0.1,      // 每次被提及增加的基础值
-			triggerWordMultiplier: 0.1,  // 每次触发词出现增加的基础值
+			mentionMultiplier: 0.2,      // 每次被提及增加的基础值
+			triggerWordMultiplier: 0.2,  // 每次触发词出现增加的基础值
 			decayRate: 0.1,              // 每分钟衰减率
-			decayInterval: 10000,         // 衰减检查间隔（毫秒）
+			decayInterval: 20000,         // 衰减检查间隔（毫秒）
 		};
 
 		// 启动衰减计时器
@@ -115,7 +115,7 @@ export class KuukiyomiHandler {
 			if (Math.random() < this.config.currentResponseRate) {
 				result.shouldAct = true;
 				result.decisionType = "random";
-				result.scene = "当前唤起场景为随机触发，请谨慎发言，避免打扰。";
+				result.scene = "随机触发，请谨慎发言。对于已经有人在讨论的话题，不要乱接话，避免反感。";
 				return result;
 			}
 

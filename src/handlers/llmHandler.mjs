@@ -12,7 +12,7 @@ export class LLMHandler {
 			// 系统提示词
 			systemPrompt: config.systemPrompt,
 			// 最大可嵌套函数调用深度（0为只允许调用1次）
-			maxStackDepth: config.maxStackDepth || 1,
+			maxStackDepth: config.maxStackDepth || 0,
 			...config,
 		};
 		this.botActionHelper = config.botActionHelper;
@@ -31,24 +31,8 @@ export class LLMHandler {
 			// 准备prompt
 			let messages = this.prepareMessages(context);
 
-			// 创建一个间隔发送打字状态的定时器，并在60秒后自动清除
-			let typingInterval = setInterval(async () => {
-				await this.botActionHelper.setTyping(context.chatId);
-			}, 5000);
-			setTimeout(() => clearInterval(typingInterval), 60000);
-
 			// 调用API
-			let response = await this.callLLM(messages);
-
-			// 获得响应后清除定时器
-			clearInterval(typingInterval);
-
-			// 保存碎碎念
-			await this.botActionHelper.sendText(
-				process.env.MEMO_CHANNEL_ID,
-				[`--- reasoning ---\n${response.reasoning || "N/A"}\n`, `--- content ---\n${response.content || "N/A"}\n`].join("\n"),
-				false
-			);
+			let response = await this.callLLM(messages, context);
 
 			// 处理响应
 			await this.processResponse(response, context);
@@ -63,25 +47,50 @@ export class LLMHandler {
 	/**
 	 * 获取消息历史并格式化为LLM消息格式
 	 */
-	processMessageHistoryForLLM(messageContext) {
+	processMessageHistoryForLLM(messageContext, withDate = false) {
 		let history = messageContext;
 		let textHistory = history.map((item) => {
+			// 计算时间差
+			let timeStr = "";
+			if (withDate && item.created_at) {
+				const now = Date.now();
+				// 将 "2025-01-30 03:38:50.683000" 格式的UTC时间转换为时间戳
+				const createdAt = new Date(item.created_at + 'Z'); // 添加Z表示这是UTC时间
+				const diff = (now - createdAt.getTime()) / 1000; // 转换为秒
+
+				if (diff < 60) {
+					timeStr = "刚刚";
+				} else if (diff < 3600) {
+					timeStr = `${Math.floor(diff / 60)}分钟前`;
+				} else if (diff < 86400) {
+					timeStr = `${Math.floor(diff / 3600)}小时前`;
+				} else {
+					timeStr = `${Math.floor(diff / 86400)}天前`;
+				}
+				timeStr = ` (${timeStr})`;
+			}
+
 			// 根据内容类型处理不同的格式
 			if (item.content_type === "message") {
 				let metadata = item.metadata || {};
 				let userIdentifier = `${metadata.from.first_name || ""}${metadata.from.last_name || ""}`;
 
+				// 检查用户是否在黑名单中
+				if (process.env.BLACKLIST_USERS.includes(metadata.from.id)) {
+					return "";
+				}
+
 				// 处理回复消息
 				if (metadata.reply_to_message) {
 					let replyMeta = metadata.reply_to_message;
 					let replyUserIdentifier = `${replyMeta.from.first_name || ""}${replyMeta.from.last_name || ""}`;
-					return `<message id="${item.message_id}" user="${userIdentifier}"><reply_to id="${replyMeta.message_id}" user="${replyUserIdentifier}">${replyMeta.text}</reply_to>${item.text}</message>`;
+					return `<message id="${item.message_id}" user="${userIdentifier}"${timeStr}><reply_to user="${replyUserIdentifier}">${replyMeta.text}</reply_to>${item.text}</message>`;
 				} else {
-					return `<message id="${item.message_id}" user="${userIdentifier}">${item.text}</message>`;
+					return `<message id="${item.message_id}" user="${userIdentifier}"${timeStr}>${item.text}</message>`;
 				}
 			} else {
 				// 处理bot的actions (note, reply, search等)
-				return `<bot_${item.content_type}>${item.text}</bot_${item.content_type}>`;
+				return `<bot_${item.content_type}${timeStr}>${item.text}</bot_${item.content_type}>`;
 			}
 		});
 
@@ -100,25 +109,17 @@ export class LLMHandler {
 
 		// 添加近似RAG搜索结果，
 		if (context.similarMessage) {
-			userRoleMessages.push(
-				"<related_rag_search_result>\n" +
-					this.processMessageHistoryForLLM(context.similarMessage) +
-					"\n</related_rag_search_result>"
-			);
+			userRoleMessages.push("<related_notes>\n" + this.processMessageHistoryForLLM(context.similarMessage, true) + "\n</related_notes>");
 		}
 
 		// 添加历史消息
-		userRoleMessages.push("<chat_history>\n" + this.processMessageHistoryForLLM(context.messageContext) + "\n</chat_history>");
+		userRoleMessages.push("<chat_history>\n" + this.processMessageHistoryForLLM(context.messageContext, true) + "\n</chat_history>");
 
 		// 添加可用函数
 		userRoleMessages.push(`<function>
 <function_call_instructions>
 你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹JSON格式的参数。一次可以调用多个函数。
 </function_call_instructions>
-<api identifier="chat____search">
-<api.instructions>使用语义检索群聊相关内容，结果会再次发送给你</api.instructions>
-<api.parameters>{"keyword": "要搜索的多个关键词"}</api.parameters>
-</api>
 <api identifier="chat____text">
 <api.instructions>直接向群内发送消息</api.instructions>
 <api.parameters>{"message": "要发送的内容"}</api.parameters>
@@ -135,6 +136,14 @@ export class LLMHandler {
 <api.instructions>当你认为没有必要回复也没有什么值得记录的内容的时候，可以跳过</api.instructions>
 <api.parameters>{}</api.parameters>
 </api>
+<api identifier="chat____search">
+<api.instructions>使用语义检索聊天历史</api.instructions>
+<api.parameters>{"keyword": "要搜索的多个关键词"}</api.parameters>
+</api>
+<api identifier="web_____search">
+<api.instructions>使用谷歌搜索互联网</api.instructions>
+<api.parameters>{"keyword": "要搜索的多个关键词"}</api.parameters>
+</api>
 </function>
 
 <functioncall____example>
@@ -142,19 +151,19 @@ export class LLMHandler {
 </functioncall____example>`);
 
 		// 添加任务
-		if(!multiShotPrompt){
-		userRoleMessages.push(`<task>
+		if (!multiShotPrompt) {
+			userRoleMessages.push(`<task>
 首先进行思考，每段思考不少于100字：
-1. 当前唤起场景为${context.responseDecision.scene}
-2. 群里面可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
-3. 你现在要回复哪个话题？群友有没有和你互动过？如果群友不搭理你，就不要继续回复了
-4. 回顾一下之前的对话，根据上文的bot_标签，是否已经回应过了，严禁复读（不要提供相似回应）。
-5. 是否需要进一步调用函数去获得搜索结果或者访问网页？
-6. 根据你的角色设定，你应该做什么？
+1. 现在群里有哪些话题？群里可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
+2. 当前唤起场景为${context.responseDecision.scene}
+3. 哪个话题与你直接有关？如果与你无关，就不要继续回复了
+4. 回顾一下之前的对话，根据上文的bot_标签，是否已经回应过了，严禁复读（不要提供相似回应、不要进一步确认）。
+5. 是否需要进一步调用函数去获得消息历史或网页搜索结果？
+6. 根据你的角色设定，怎么行动才更加自然？
 
-然后模仿functioncall____example，自主调用相应一个或多个函数。
+然后模仿functioncall____example，一次可以调用多个函数。
 </task>`);
-		}else{
+		} else {
 			userRoleMessages.push(multiShotPrompt);
 		}
 
@@ -177,18 +186,9 @@ After reviewing the history, I found tips like the following inserted in replies
 	}
 
 	/**
-	 * 构建上下文信息
-	 */
-	buildRelatedMessage(similarContent) {
-		console.log(similarContent);
-		// todo
-		return;
-	}
-
-	/**
 	 * 调用LLM API
 	 */
-	async callLLM(messages) {
+	async callLLM(messages, context) {
 		let completion = await this.openai.chat.completions.create({
 			model: this.config.model,
 			messages: messages,
@@ -200,42 +200,53 @@ After reviewing the history, I found tips like the following inserted in replies
 			//include_reasoning: true,
 		});
 
-		// 保存日志到文件
-		let timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		let logContent = [
-			// 输入消息
-			messages.map((msg) => `--- ${msg.role} ---\n${msg.content}\n`).join("\n"),
-			// 分隔线
-			"\n=== Response ===\n",
-			// 响应内容
-			`--- reasoning ---\n${completion.choices[0].message.reasoning || "N/A"}\n`,
-			`--- content ---\n${completion.choices[0].message.content || "N/A"}\n`,
-		].join("\n");
+		// 合并reasoning和content
+		let response = completion.choices[0].message?.reasoning || "" + completion.choices[0].message?.content || "";
 
-		// 确保logs目录存在
-		await fs.mkdir("logs", { recursive: true });
+		if (this.config.debug) {
+			// 保存日志到文件
+			let timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+			let logContent = [
+				// 输入消息
+				messages.map((msg) => `--- ${msg.role} ---\n${msg.content}\n`).join("\n"),
+				// 分隔线
+				"\n=== Response ===\n",
+				// 响应内容
+				response
+			].join("\n");
 
-		// 写入日志文件
-		await fs.writeFile(path.join("logs", `${timestamp}.txt`), logContent, "utf-8");
+			// 确保logs目录存在
+			await fs.mkdir("logs", { recursive: true });
 
-		return completion.choices[0].message;
+			// 写入日志文件
+			await fs.writeFile(path.join("logs", `${timestamp}.txt`), logContent, "utf-8");
+		}
+		// 保存碎碎念
+		if (process.env.MEMO_CHANNEL_ID && process.env.MEMO_CHAT_LIST.includes(context.chatId)) {
+			this.botActionHelper.sendText(
+				process.env.MEMO_CHANNEL_ID,
+				response,
+				false
+			);
+		}
+
+		return response;
 	}
 
 	/**
 	 * 处理LLM的响应
 	 */
 	async processResponse(response, context) {
-
 		// 计算当前调用深度
-		context.StackDepth = context?.StackDepth+1 || 0;
-		
-		// 将reasoning和content合并，允许在reasoning里输出函数调用
-		let content = response.reasoning + "\n" + response.content;
+		context.StackDepth = context?.StackDepth + 1 || 0;
 
-		if (!content) return;
+		if (!response) return;
 
 		try {
-			let functionCalls = this.extractFunctionCalls(content);
+			// 修改这里的解构赋值语法
+			let extractResult = this.extractFunctionCalls(response);
+			let functionCalls = extractResult.functionCalls;
+			response = extractResult.response;
 
 			for (let call of functionCalls) {
 				let { function: funcName, params } = call;
@@ -262,13 +273,27 @@ After reviewing the history, I found tips like the following inserted in replies
 							console.warn("搜索缺少关键词参数");
 							continue;
 						}
-						if(context.StackDepth > this.config.maxStackDepth){
+						if (context.StackDepth > this.config.maxStackDepth) {
 							console.warn("StackDepth超过最大深度，禁止调用可能嵌套的函数");
 							continue;
 						}
-						this.botActionHelper.search(context.chatId, params.keyword).then((result) => {
+						this.botActionHelper.search(context.chatId, params.keyword).then(async (result) => {
 							console.log("搜索结果：", result);
-							this.handleRAGSearchResults(result, response, context);
+							await this.handleRAGSearchResults(result, response, context);
+						});
+						break;
+					case "web_____search":
+						if (!params.keyword) {
+							console.warn("搜索缺少关键词参数");
+							continue;
+						}
+						if (context.StackDepth > this.config.maxStackDepth) {
+							console.warn("StackDepth超过最大深度，禁止调用可能嵌套的函数");
+							continue;
+						}
+						this.botActionHelper.googleSearch(params.keyword).then(async (result) => {
+							console.log("搜索结果：", result);
+							await this.handleGoogleSearchResults(result, response, context);
 						});
 						break;
 
@@ -289,24 +314,41 @@ After reviewing the history, I found tips like the following inserted in replies
 	/**
 	 * 从LLM响应中提取函数调用
 	 */
-	extractFunctionCalls(content) {
+	extractFunctionCalls(response) {
 		// 如果内容为空，返回空数组
-		if (!content) {
-			return [];
+		if (!response) {
+			return { functionCalls: [], response: "" };
 		}
 
 		let functionCalls = [];
 
+		// 定义multiShot函数列表
+		const multiShotFunctions = ["chat____search", "web_____search"];
+
 		// 创建匹配所有支持函数的统一正则表达式
-		let supportedFunctions = ["chat____search", "chat____text", "chat____reply", "chat____note", "chat____skip"];
+		let supportedFunctions = ["chat____search", "chat____text", "chat____reply", "chat____note", "chat____skip", "web_____search"];
 		let combinedRegex = new RegExp(`<(${supportedFunctions.join("|")})>([\\s\\S]*?)<\\/.*?>`, "g");
 
 		let match;
-		while ((match = combinedRegex.exec(content)) !== null) {
+		let lastIndex = 0;
+		let foundMultiShot = false;
+
+		while ((match = combinedRegex.exec(response)) !== null) {
 			let funcName = match[1];
 			let params = match[2].trim();
 
 			try {
+				// 检查是否是multiShot函数
+				if (multiShotFunctions.includes(funcName)) {
+					foundMultiShot = true;
+					lastIndex = match.index + match[0].length;
+				}
+
+				// 如果已经找到multiShot函数，则不再处理后续函数
+				if (foundMultiShot && !multiShotFunctions.includes(funcName)) {
+					continue;
+				}
+
 				// 对于skip函数，不需要参数
 				if (funcName === "chat____skip") {
 					functionCalls.push({
@@ -329,26 +371,53 @@ After reviewing the history, I found tips like the following inserted in replies
 					function: funcName,
 					params: parsedParams,
 				});
+
+				// 如果是multiShot函数，立即停止处理后续内容
+				if (multiShotFunctions.includes(funcName)) {
+					break;
+				}
 			} catch (error) {
 				console.error(`处理函数 ${funcName} 时出错:`, error);
 			}
 		}
 
-		if (this.config.debug) console.log(functionCalls);
-		return functionCalls;
+		// 如果找到了multiShot函数，清空该函数后的所有内容
+		if (foundMultiShot && lastIndex > 0) {
+			response = response.substring(0, lastIndex);
+		}
+
+		return { functionCalls, response };
 	}
 
 	/**
-	 * 处理搜索结果
+	 * 处理历史搜索结果
 	 */
 	async handleRAGSearchResults(searchResults, previousResponse, context) {
-		let previousThinking = previousResponse?.reasoning || "" + previousResponse?.content || "";
 		context.similarMessage = "";
-		let multiShotPrompt = `<previous_thought>${previousThinking}</previous_thought>
-<search_results>${this.processMessageHistoryForLLM(searchResults)}</search_results>
+		let multiShotPrompt = `<previous_action>${previousResponse}</previous_action>
+		以上是你之前的行动，下面是搜索结果，请根据搜索结果进行行动，不要重复。
+<history_search_results>
+${this.processMessageHistoryForLLM(searchResults, true)}
+</history_search_results>
 `;
 		let messages = this.prepareMessages(context, multiShotPrompt);
-		let newResponse = await this.callLLM(messages);
+		let newResponse = await this.callLLM(messages, context);
+		return this.processResponse(newResponse, context);
+	}
+
+	/**
+	 * 处理谷歌搜索结果
+	 */
+	async handleGoogleSearchResults(searchResults, previousResponse, context) {
+		context.similarMessage = "";
+		let multiShotPrompt = `<previous_action>${previousResponse}</previous_action>
+		以上是你之前的行动，下面是搜索结果，请根据搜索结果进行行动，不要重复。
+<web_search_results>
+${JSON.stringify(searchResults)}
+</web_search_results>
+`;
+		let messages = this.prepareMessages(context, multiShotPrompt);
+		let newResponse = await this.callLLM(messages, context);
 		return this.processResponse(newResponse, context);
 	}
 }
