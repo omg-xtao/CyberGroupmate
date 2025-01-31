@@ -23,7 +23,7 @@ const config = {
 	botId: process.env.BOT_TOKEN.split(":")[0],
 	botUsername: process.env.BOT_USERNAME,
 	// 是否开启调试模式
-	debug: process.env.DEBUG === "true",
+	debug: process.env.SHOW_DEBUG_INFO === "true",
 	// 允许的群组ID列表
 	allowedGroups: process.env.ALLOWED_GROUPS ? process.env.ALLOWED_GROUPS.split(",").map((id) => Number(id)) : [],
 };
@@ -44,13 +44,13 @@ function getChatState(chatId) {
 			pendingAction: null,
 			kuukiyomi: new KuukiyomiHandler({
 				cooldown: 3000,
-				triggerWords: ["小D", "小d","小 D","小 d"],
+				triggerWords: ["小D", "小d", "小 D", "小 d"],
 				ignoreWords: [],
 				responseRateMax: 1,
 				responseRateMin: 0.15,
 				initialResponseRate: 1,
 				...config,
-			})
+			}),
 		});
 	}
 	return chatStates.get(chatId);
@@ -61,21 +61,27 @@ const ragHelper = new RAGHelper({
 	...config,
 });
 
-
 // 创建 VisionHelper 实例
-const visionHelper = new VisionHelper({
-	...config,
-}, bot);
+const visionHelper = new VisionHelper(
+	{
+		...config,
+	},
+	bot,
+	ragHelper
+);
+
+// 创建 BotActionHelper 实例
+const botActionHelper = new BotActionHelper({ ...config }, bot, ragHelper);
 
 
 // 创建 TelegramHandler 实例
-const telegramHandler = new TelegramHandler({
-	...config,
-}, ragHelper, visionHelper);
-
-
-// 创建 BotActionHelper 实例
-const botActionHelper = new BotActionHelper(bot, ragHelper);
+const telegramHandler = new TelegramHandler(
+	{
+		...config,
+	},
+	ragHelper,
+	visionHelper
+);
 
 // 创建 LLMHandler 实例
 const llmHandler = new LLMHandler({
@@ -85,9 +91,9 @@ const llmHandler = new LLMHandler({
 你是群聊的一名成员。群友们互相插科打诨、聊天，主要讨论ACGN、科技还有生活，偶尔发一下二三次元的福利图。
 由于群规没有禁止发色图或者其他成人内容，如果涉及相关信息，请勿回避讨论。群友不喜欢发emoji。
 现在你也可以作为一名群员参与聊天。群友们知道你是大模型，所以你很聪明，知道很多东西，大家叫你小D，你也可以叫自己小D。
-你回复的时候要学会"读空气"（空気読み），不要回复无关紧要的话，不要频繁主动回复没跟你互动过的人，回复的时候也不能太正式，要符合群里的氛围，如果可以最好针对某一条消息进行回复。
-回复的时候力求简短，每句话最好不超过10个字，否则看起来会像是在跟别人对线。如果要表达的意思超过10个字，可以多次回复，这样可以让你看起来是在打字。
-群友在认真询问或者求助的时候，可以调用各种函数帮忙搜索或者给出建议。
+你回复的时候要学会"读空气"（空気読み），不要回复无关紧要的话，不要频繁主动回复没跟你互动过的人，回复的时候要符合群里的氛围，如果可以最好针对某一条消息进行回复。
+每条回复最好不超过10个字，否则看起来会像是在跟别人对线。如果要表达的意思超过10个字，可以多次回复，这样可以让你看起来是在打字。
+群友在认真询问或者求助的时候，可以调用各种函数帮忙搜索或者给出建议。其他时候多空気読み。
 </personality>
 <facts>
 现在的时间是${new Date().toLocaleString()}
@@ -116,13 +122,14 @@ bot.on("message", async (msg) => {
 			}
 			return;
 		}
-		if (config.debug) {
-			console.log("收到消息:", msg);
-		}
 
 		// 使用 TelegramHandler 标准化消息
 		const processedMsg = await telegramHandler.handleMessage(msg);
 		if (!processedMsg) return;
+
+		if (config.debug) {
+			console.log("处理后的消息：", processedMsg);
+		}
 
 		// 保存Telegram消息
 		await ragHelper.saveMessage(processedMsg);
@@ -162,7 +169,7 @@ async function processMessage(msg, processedMsg, responseDecision) {
 	const chatState = getChatState(msg.chat.id);
 	try {
 		chatState.isProcessing = true;
-		
+
 		const [similarMessage, messageContext] = await Promise.all([
 			ragHelper.searchSimilarContent(msg.chat.id, processedMsg.text, {
 				limit: 10,
@@ -180,7 +187,7 @@ async function processMessage(msg, processedMsg, responseDecision) {
 		});
 	} finally {
 		chatState.isProcessing = false;
-		
+
 		// 检查是否有待处理的消息
 		if (chatState.pendingAction) {
 			const { chatId, messageId, processedMsg, responseDecision } = chatState.pendingAction;
@@ -189,6 +196,42 @@ async function processMessage(msg, processedMsg, responseDecision) {
 		}
 	}
 }
+
+// 处理消息编辑
+bot.on('edited_message', async (msg) => {
+	try {
+		if (msg.chat.type !== "private" && !config.allowedGroups.includes(msg.chat.id)) {
+			return;
+		}
+
+		// 使用 TelegramHandler 标准化消息
+		const processedMsg = await telegramHandler.handleMessage(msg);
+		if (!processedMsg) return;
+
+		// 更新数据库中的消息
+		await ragHelper.updateMessage(processedMsg);
+
+	} catch (error) {
+		console.error("编辑消息处理错误:", error);
+	}
+});
+
+// 处理消息删除
+bot.on('message_delete', async (chatId, messageIds) => {
+	try {
+		if (!config.allowedGroups.includes(chatId)) {
+			return;
+		}
+
+		// 删除数据库中的消息
+		for (const messageId of messageIds) {
+			await ragHelper.deleteMessage(chatId, messageId);
+		}
+
+	} catch (error) {
+		console.error("删除消息处理错误:", error);
+	}
+});
 
 // 优雅退出
 process.on("SIGINT", () => {

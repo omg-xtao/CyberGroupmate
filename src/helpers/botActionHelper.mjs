@@ -1,11 +1,13 @@
 export class BotActionHelper {
-    constructor(bot, ragHelper) {
+    constructor(config, bot, ragHelper) {
+        this.config = config;
         this.bot = bot;
         this.ragHelper = ragHelper;
     }
 
     async sendText(chatId, content, log = true) {
         await this.bot.sendMessage(chatId, content);
+        if (this.config.debug) console.log("发送文本：", content);
         if (log) await this.ragHelper.saveAction(chatId, content, "text");
     }
 
@@ -15,6 +17,7 @@ export class BotActionHelper {
 
     async sendReply(chatId, content, replyToMessageId, log = true) {
         await this.bot.sendMessage(chatId, content, { reply_to_message_id: replyToMessageId });
+        if (this.config.debug) console.log("发送回复：", content);
         if (log) await this.ragHelper.saveAction(chatId, content, "reply", { reply_to_message_id: replyToMessageId });
     }
 
@@ -38,7 +41,7 @@ export class BotActionHelper {
           const response = await fetch(url);
           const data = await response.json();
       
-          console.log("谷歌搜索：", data);
+          if (this.config.debug) console.log("谷歌搜索：", data);
           
           if (data.items && data.items.length > 0) {
             return data.items.map(item => ({

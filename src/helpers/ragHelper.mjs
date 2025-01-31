@@ -33,7 +33,22 @@ export class RAGHelper {
             
             await client.query('CREATE EXTENSION IF NOT EXISTS vector;');
             
-            // 重新设计消息表结构
+            // 添加 sticker 表
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS sticker_memories (
+                    id SERIAL PRIMARY KEY,
+                    sticker_file_unique_id TEXT NOT NULL UNIQUE,
+                    sticker_file_id TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE INDEX IF NOT EXISTS idx_sticker_file_unique_id 
+                ON sticker_memories(sticker_file_unique_id);
+            `);
+            
+            // 消息表结构
             await client.query(`
                 CREATE TABLE IF NOT EXISTS chat_memories (
                     id SERIAL PRIMARY KEY,
@@ -281,6 +296,77 @@ export class RAGHelper {
             return true;
         } catch (error) {
             console.error('更新消息错误:', error);
+            return false;
+        }
+    }
+
+    /**
+     * 删除消息
+     * @param {number} chatId - 聊天ID
+     * @param {number} messageId - 消息ID
+     * @returns {Promise<boolean>} 删除是否成功
+     */
+    async deleteMessage(chatId, messageId) {
+        try {
+            const client = await this.pool.connect();
+            
+            await client.query(
+                `DELETE FROM chat_memories 
+                WHERE chat_id = $1 AND message_id = $2`,
+                [chatId, messageId]
+            );
+            
+            client.release();
+            
+            if (this.debug) console.log('消息已删除');
+            return true;
+        } catch (error) {
+            console.error('删除消息错误:', error);
+            return false;
+        }
+    }
+
+    // 添加新方法：获取或保存 sticker 描述
+    async getStickerDescription(stickerFileUniqueId, stickerFileId) {
+        try {
+            const client = await this.pool.connect();
+            
+            // 尝试获取现有描述
+            const existingResult = await client.query(
+                'SELECT description FROM sticker_memories WHERE sticker_file_unique_id = $1',
+                [stickerFileUniqueId]
+            );
+            
+            if (existingResult.rows.length > 0) {
+                client.release();
+                return existingResult.rows[0].description;
+            }
+            
+            client.release();
+            return null;
+        } catch (error) {
+            console.error('获取sticker描述错误:', error);
+            return null;
+        }
+    }
+
+    async saveStickerDescription(stickerFileUniqueId, stickerFileId, description, metadata = {}) {
+        try {
+            const client = await this.pool.connect();
+            
+            await client.query(
+                `INSERT INTO sticker_memories 
+                (sticker_file_unique_id, sticker_file_id, description, metadata) 
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (sticker_file_unique_id) 
+                DO UPDATE SET description = $3, metadata = $4`,
+                [stickerFileUniqueId, stickerFileId, description, metadata]
+            );
+            
+            client.release();
+            return true;
+        } catch (error) {
+            console.error('保存sticker描述错误:', error);
             return false;
         }
     }

@@ -57,7 +57,7 @@ export class KuukiyomiHandler {
 		};
 
 		try {
-			console.log("当前响应概率为：" + this.config.currentResponseRate);
+			if (this.config.debug) console.log("当前响应概率为：" + this.config.currentResponseRate);
 
 			if(processedMsg.metadata.chat.type == "private") {
 				this.stats.mentionCount++;
