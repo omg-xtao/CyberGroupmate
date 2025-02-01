@@ -10,7 +10,12 @@ export class ConfigManager {
 		this.baseConfig.collections.forEach((collection) => {
 			collection.chats.forEach((chat) => {
 				// 三层配置合并：base <- collection <- chat
-				const mergedConfig = this.deepAssign(this.baseConfig.base, collection, chat);
+				const mergedConfig = this.deepAssign(
+					{},
+					this.baseConfig.base,
+					collection.config,
+					chat.config
+				);
 				this.chatConfigs.set(chat.id, mergedConfig);
 			});
 		});

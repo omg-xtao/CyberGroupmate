@@ -101,7 +101,11 @@ export class LLMHandler {
 	 */
 	prepareMessages(context, multiShotPrompt = "") {
 		// 添加系统提示词，这里用system role
-		let messages = [{ role: "system", content: this.chatConfig.actionGenerator.systemPrompt }];
+		let messages = [{ role: "system", content: this.chatConfig.actionGenerator.systemPrompt + 
+`<facts>
+现在的时间是${new Date().toLocaleString("zh-CN", { timeZone: this.chatConfig.actionGenerator.timeZone })}
+</facts>`
+		 }];
 
 		//从这里开始用 user role，所有消息先用回车分隔，最后再合并到 user role message 里
 		let userRoleMessages = [];
@@ -160,13 +164,12 @@ export class LLMHandler {
 		// 添加任务
 		if (!multiShotPrompt) {
 			userRoleMessages.push(`<task>
-首先严格按照以下步骤进行思考，每段思考不少于100字：
+首先严格按照以下步骤进行思考：
 1. 现在群里有哪些话题？群里可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
-2. 当前唤起场景为${context.responseDecision.scene}
-3. 哪个话题与你直接有关？如果与你无关，就不要继续回复了
-4. 回顾一下之前的对话，特别关注<bot_reply (刚刚)>标签，不要提供相似回应。
-5. 是否需要进一步调用函数去获得消息历史或网页搜索结果？
-6. 根据你的角色设定，怎么行动才更加自然？
+2. 哪个话题与你直接有关？如果与你无关，就不要继续回复了
+3. 回顾一下之前的对话，特别关注<bot_reply (刚刚)>标签，不要提供相似回应。
+4. 是否需要进一步调用函数去获得消息历史或网页搜索结果？
+5. 当前唤起场景为${context.responseDecision.scene}。根据你的角色设定，怎么行动才更加自然？
 
 然后模仿functioncall____example，一次可以调用多个函数。
 </task>`);
