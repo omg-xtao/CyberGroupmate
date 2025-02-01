@@ -1,49 +1,45 @@
 export class KuukiyomiHandler {
-	constructor(config = {}) {
-		this.config = {
-			// 冷却时间（毫秒）
-			cooldown: config.cooldown || 1000,
-			// 群组消息频率限制（条/分钟）
-			groupRateLimit: config.groupRateLimit || 30,
-			// 用户消息频率限制（条/分钟）
-			userRateLimit: config.userRateLimit || 5,
-			// 触发词
-			triggerWords: config.triggerWords || [],
-			// 忽略词
-			ignoreWords: config.ignoreWords || [],
-			// 响应概率范围（0-1）
-			responseRateMax: config.responseRateMax || 0.5,
-			responseRateMin: config.responseRateMin || 0.1,
-			// 当前响应概率
-			currentResponseRate: config.initialResponseRate || 0.1,
-			...config,
-		};
+	constructor(chatConfig = {}) {
+		// 初始化基础配置
+		this.chatConfig = chatConfig;
+		this.config = chatConfig.kuukiyomi;
+		
+		// 初始化状态追踪
+		this.initializeStateTracking();
+		
+		// 初始化响应率调整参数
+		this.initializeRateAdjustment();
+		
+		// 启动衰减计时器
+		this.startDecayTimer();
+	}
 
-		// 存储最后响应时间
+	initializeStateTracking() {
+		// 初始化响应概率
+		this.currentResponseRate = this.config.initialResponseRate;
+		
+		// 初始化响应时间和消息频率追踪
 		this.lastResponseTime = new Map();
-		// 存储消息频率
 		this.messageRates = {
 			groups: new Map(),
 			users: new Map(),
 		};
-
-		// 添加新的状态跟踪
+		
+		// 初始化统计数据
 		this.stats = {
 			mentionCount: 0,        // 被提及次数
 			triggerWordCount: 0,    // 触发词出现次数
 			lastInteractionTime: Date.now(),  // 上次交互时间
 		};
-		
-		// 响应率调整参数
+	}
+
+	initializeRateAdjustment() {
 		this.rateAdjustment = {
 			mentionMultiplier: 0.2,      // 每次被提及增加的基础值
 			triggerWordMultiplier: 0.2,  // 每次触发词出现增加的基础值
 			decayRate: 0.1,              // 每分钟衰减率
 			decayInterval: 20000,         // 衰减检查间隔（毫秒）
 		};
-
-		// 启动衰减计时器
-		this.startDecayTimer();
 	}
 
 	/**
@@ -57,7 +53,7 @@ export class KuukiyomiHandler {
 		};
 
 		try {
-			if (this.config.debug) console.log("当前响应概率为：" + this.config.currentResponseRate);
+			if (this.chatConfig.debug) console.log("当前响应概率为：" + this.currentResponseRate);
 
 			if(processedMsg.metadata.chat.type == "private") {
 				this.stats.mentionCount++;
@@ -70,8 +66,8 @@ export class KuukiyomiHandler {
 			}
 
 			// 优先 检查是否被提及或回复
-			if (processedMsg.metadata.reply_to_message?.from?.id == this.config.botId || 
-				processedMsg.text?.includes(`@${this.config.botUsername}`)) {
+			if (processedMsg.metadata.reply_to_message?.from?.id == this.chatConfig.telegram.botToken.split(":")[0] || 
+				processedMsg.text?.includes(`@${this.chatConfig.telegram.botUsername}`)) {
 				this.stats.mentionCount++;
 				this.stats.lastInteractionTime = Date.now(); // 更新主动交互时间
 				result.shouldAct = true;
@@ -112,7 +108,7 @@ export class KuukiyomiHandler {
 			}
 
 			// 6. 随机响应判断
-			if (Math.random() < this.config.currentResponseRate) {
+			if (Math.random() < this.currentResponseRate) {
 				result.shouldAct = true;
 				result.decisionType = "random";
 				result.scene = "随机触发，请谨慎发言。对于已经有人在讨论的话题，不要乱接话，避免反感。";
@@ -235,12 +231,12 @@ export class KuukiyomiHandler {
 		const decayFactor = Math.max(0, 1 - (timeSinceLastInteraction * this.rateAdjustment.decayRate));
 		
 		// 如果当前响应率已经降到最低，并且有新的主动交互，直接提升到最高响应率
-		if (this.config.currentResponseRate <= this.config.responseRateMin && 
+		if (this.currentResponseRate <= this.config.responseRateMin && 
 			(this.stats.mentionCount > 0 || this.stats.triggerWordCount > 0)) {
 			return this.config.responseRateMax;
 		}
 		
-		let newRate = this.config.currentResponseRate;
+		let newRate = this.currentResponseRate;
 		
 		// 根据统计数据调整响应率
 		newRate += this.stats.mentionCount * this.rateAdjustment.mentionMultiplier;
@@ -255,7 +251,7 @@ export class KuukiyomiHandler {
 
 	// 添加新方法：调整响应率
 	adjustResponseRate() {
-		this.config.currentResponseRate = this.calculateNewResponseRate();
+		this.currentResponseRate = this.calculateNewResponseRate();
 		
 		// 重置计数器
 		this.stats.mentionCount = 0;

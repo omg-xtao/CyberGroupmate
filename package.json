@@ -1,25 +1,25 @@
 {
-  "name": "赛博群友",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "GPLv3",
-  "dependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "dotenv": "^16.4.7",
-    "fluent-ffmpeg": "^2.1.3",
-    "node-telegram-bot-api": "^0.66.0",
-    "npm": "^11.1.0",
-    "open-graph-scraper": "^6.9.0",
-    "openai": "^4.80.1",
-    "path": "^0.12.7",
-    "pg": "^8.13.1",
-    "pgvector": "^0.2.0",
-    "url": "^0.11.4"
-  }
+	"name": "cybergroupmate",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"run": "node src/index.mjs"
+	},
+	"type": "module",
+	"keywords": [],
+	"author": "",
+	"license": "GPLv3",
+	"dependencies": {
+		"@ffmpeg-installer/ffmpeg": "^1.1.0",
+		"dotenv": "^16.4.7",
+		"fluent-ffmpeg": "^2.1.3",
+		"node-telegram-bot-api": "^0.66.0",
+		"open-graph-scraper": "^6.9.0",
+		"openai": "^4.80.1",
+		"path": "^0.12.7",
+		"pg": "^8.13.1",
+		"pgvector": "^0.2.0",
+		"url": "^0.11.4"
+	}
 }

@@ -12,6 +12,9 @@ pnpm-lock.yaml
 .env.local
 .env.*.local
 
+# 配置文件
+src/config.js
+
 # VS Code
 .vscode/*
 !.vscode/settings.json

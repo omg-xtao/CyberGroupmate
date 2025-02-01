@@ -1,8 +1,8 @@
 import ogs from "open-graph-scraper";
 
 export class TelegramHandler {
-	constructor(config = {}, ragHelper, visionHelper) {
-		this.debug = config.debug || false;
+	constructor(chatConfig = {}, ragHelper, visionHelper) {
+		this.chatConfig = chatConfig;
 		this.ragHelper = ragHelper;
 		this.visionHelper = visionHelper;
 	}
@@ -33,7 +33,8 @@ export class TelegramHandler {
 						timeout: 2000, // 2秒超时
 						fetchOptions: {
 							headers: {
-								"user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+								"user-agent":
+									"Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
 							},
 						},
 					};
@@ -116,60 +117,70 @@ export class TelegramHandler {
 			}
 
 			// 处理转发消息
-            if (telegramMsg.forward_origin) {
-                standardizedMsg.metadata.forward_origin = {
-                    type: telegramMsg.forward_origin.type,
-                };
+			if (telegramMsg.forward_origin) {
+				standardizedMsg.metadata.forward_origin = {
+					type: telegramMsg.forward_origin.type,
+				};
 
-                // 添加显示名称
-                let displayName = "";
+				// 添加显示名称
+				let displayName = "";
 
-                // 根据不同的转发来源类型处理
-                switch (telegramMsg.forward_origin.type) {
-                    case "user":
-                        const user = telegramMsg.forward_origin.sender_user;
-                        standardizedMsg.metadata.forward_origin.sender_user = {
-                            id: user.id,
-                            is_bot: user.is_bot,
-                            username: user.username || "",
-                            first_name: user.first_name || "",
-                            last_name: user.last_name || "",
-                        };
-                        displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "未知用户";
-                        break;
-                    case "channel":
-                        const chat = telegramMsg.forward_origin.chat;
-                        standardizedMsg.metadata.forward_origin.chat = {
-                            id: chat.id,
-                            title: chat.title,
-                            username: chat.username || "",
-                        };
-                        standardizedMsg.metadata.forward_origin.message_id = telegramMsg.forward_origin.message_id;
-                        displayName = chat.title || chat.username || "未知频道";
-                        break;
-                    case "hidden":
-                        displayName = "隐藏来源";
-                        break;
-                    default:
-                        displayName = "未知来源";
-                }
+				// 根据不同的转发来源类型处理
+				switch (telegramMsg.forward_origin.type) {
+					case "user":
+						const user = telegramMsg.forward_origin.sender_user;
+						standardizedMsg.metadata.forward_origin.sender_user = {
+							id: user.id,
+							is_bot: user.is_bot,
+							username: user.username || "",
+							first_name: user.first_name || "",
+							last_name: user.last_name || "",
+						};
+						displayName =
+							[user.first_name, user.last_name].filter(Boolean).join(" ") ||
+							user.username ||
+							"未知用户";
+						break;
+					case "channel":
+						const chat = telegramMsg.forward_origin.chat;
+						standardizedMsg.metadata.forward_origin.chat = {
+							id: chat.id,
+							title: chat.title,
+							username: chat.username || "",
+						};
+						standardizedMsg.metadata.forward_origin.message_id =
+							telegramMsg.forward_origin.message_id;
+						displayName = chat.title || chat.username || "未知频道";
+						break;
+					case "hidden":
+						displayName = "隐藏来源";
+						break;
+					default:
+						displayName = "未知来源";
+				}
 
-                standardizedMsg.metadata.forward_origin.display_name = displayName;
+				standardizedMsg.metadata.forward_origin.display_name = displayName;
 
-                if (telegramMsg.forward_date) {
-                    standardizedMsg.metadata.forward_date = new Date(telegramMsg.forward_date * 1000).toISOString();
-                }
+				if (telegramMsg.forward_date) {
+					standardizedMsg.metadata.forward_date = new Date(
+						telegramMsg.forward_date * 1000
+					).toISOString();
+				}
 
-                // 在文本前添加转发来源信息
-                if (standardizedMsg.text) {
-                    standardizedMsg.text = `[转发自: ${displayName}]\n${standardizedMsg.text}`;
-                }
-            }
+				// 在文本前添加转发来源信息
+				if (standardizedMsg.text) {
+					standardizedMsg.text = `[转发自: ${displayName}]\n${standardizedMsg.text}`;
+				}
+			}
 
 			// 处理媒体消息（如果有）
 			if (telegramMsg.photo || telegramMsg.video || telegramMsg.document) {
 				standardizedMsg.metadata.has_media = true;
-				standardizedMsg.metadata.media_type = telegramMsg.photo ? "photo" : telegramMsg.video ? "video" : "document";
+				standardizedMsg.metadata.media_type = telegramMsg.photo
+					? "photo"
+					: telegramMsg.video
+						? "video"
+						: "document";
 
 				// 即时处理：优先使用 caption，如果没有则使用默认文本
 				standardizedMsg.text = telegramMsg.caption || "[图片]";
@@ -207,15 +218,25 @@ export class TelegramHandler {
 				};
 
 				// 获取或生成 sticker 描述
-				let stickerDescription = await this.ragHelper.getStickerDescription(telegramMsg.sticker.file_unique_id, telegramMsg.sticker.file_id);
+				let stickerDescription = await this.ragHelper.getStickerDescription(
+					telegramMsg.sticker.file_unique_id,
+					telegramMsg.sticker.file_id
+				);
 
 				if (!stickerDescription) {
 					// 如果没有现有描述，使用 visionHelper 分析
-					stickerDescription = await this.visionHelper.analyzeSticker(telegramMsg.sticker);
+					stickerDescription = await this.visionHelper.analyzeSticker(
+						telegramMsg.sticker
+					);
 					if (stickerDescription) {
-						await this.ragHelper.saveStickerDescription(telegramMsg.sticker.file_unique_id, telegramMsg.sticker.file_id, stickerDescription, {
-							emoji: telegramMsg.sticker.emoji,
-						});
+						await this.ragHelper.saveStickerDescription(
+							telegramMsg.sticker.file_unique_id,
+							telegramMsg.sticker.file_id,
+							stickerDescription,
+							{
+								emoji: telegramMsg.sticker.emoji,
+							}
+						);
 					}
 				}
 
