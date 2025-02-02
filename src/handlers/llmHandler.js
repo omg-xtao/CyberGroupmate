@@ -137,7 +137,7 @@ export class LLMHandler {
 				if (userMemories) {
 					userRoleMessages.push(
 						"<user_memories>\n" +
-						`对用户 ${lastMessage.metadata.from.first_name || ""}${lastMessage.metadata.from.last_name || ""} 的记忆：\n` +
+						`${lastMessage.metadata.from.first_name || ""}${lastMessage.metadata.from.last_name || ""} 让你记住的事：\n` +
 						userMemories.text +
 						"\n</user_memories>"
 					);
