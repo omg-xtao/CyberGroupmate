@@ -460,7 +460,7 @@ export class LLMHandler {
 ${this.processMessageHistoryForLLM(searchResults, true)}
 </history_search_results>
 `;
-		let messages = this.prepareMessages(context, multiShotPrompt);
+		let messages = await this.prepareMessages(context, multiShotPrompt);
 		let newResponse = await this.callLLM(messages, context);
 		return this.processResponse(newResponse, context);
 	}
@@ -476,7 +476,7 @@ ${this.processMessageHistoryForLLM(searchResults, true)}
 ${JSON.stringify(searchResults)}
 </web_search_results>
 `;
-		let messages = this.prepareMessages(context, multiShotPrompt);
+		let messages = await this.prepareMessages(context, multiShotPrompt);
 		let newResponse = await this.callLLM(messages, context);
 		return this.processResponse(newResponse, context);
 	}
