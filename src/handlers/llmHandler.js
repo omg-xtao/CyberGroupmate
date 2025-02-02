@@ -136,8 +136,7 @@ export class LLMHandler {
 				const userMemories = await this.ragHelper.getUserMemory(lastMessage.metadata.from.id);
 				if (userMemories) {
 					userRoleMessages.push(
-						"<user_memories>\n" +
-						`${lastMessage.metadata.from.first_name || ""}${lastMessage.metadata.from.last_name || ""} 让你记住的事：\n` +
+						`<user_memories for="${lastMessage.metadata.from.first_name || ""}${lastMessage.metadata.from.last_name || ""}">` +
 						userMemories.text +
 						"\n</user_memories>"
 					);
