@@ -91,7 +91,7 @@ export class VisionHelper {
 				max_tokens: 300,
 			});
 
-			if (this.debug) {
+			if (this.chatConfig.debug) {
 				console.log("Vision API 响应:", response);
 			}
 
@@ -142,13 +142,25 @@ export class VisionHelper {
 			let imageContents = [];
 
 			if (sticker.is_animated || sticker.is_video) {
-				// 对于动画贴纸，我们需要抽取帧
-				const frames = await this.extractStickerFrames(fileUrl);
-				imageContents = frames.slice(0, 2).map((frameUrl) => ({
-					type: "image_url",
-					image_url: { url: frameUrl },
-				}));
-				userPrompt += "\n这是一个动态贴纸的两个关键帧，请综合描述其动态效果。";
+				try {
+					// 对于动画贴纸，我们需要抽取帧
+					const frames = await this.extractStickerFrames(fileUrl);
+					imageContents = frames.slice(0, 2).map((frameUrl) => ({
+						type: "image_url",
+						image_url: { url: frameUrl },
+					}));
+					userPrompt += "\n这是一个动态贴纸的两个关键帧，请综合描述其动态效果。";
+				} catch (error) {
+					console.error("提取贴纸帧失败，将使用原始贴纸:", error);
+					// 如果提取帧失败，回退到使用原始贴纸
+					imageContents = [
+						{
+							type: "image_url",
+							image_url: { url: fileUrl },
+						},
+					];
+					userPrompt += "\n这是一个动态贴纸，但无法提取帧画面。";
+				}
 			} else {
 				// 静态贴纸直接使用原图
 				imageContents = [
@@ -175,7 +187,7 @@ export class VisionHelper {
 				max_tokens: 150,
 			});
 
-			if (this.debug) {
+			if (this.chatConfig.debug) {
 				console.log("Sticker Vision API 响应:", response);
 			}
 
@@ -199,25 +211,71 @@ export class VisionHelper {
 		const buffer = Buffer.from(arrayBuffer);
 
 		const inputPath = path.join(this.tmpDir, `input_${Date.now()}.webm`);
-		const outputPath = path.join(this.tmpDir, `frame_%d.jpg`);
-
 		await fs.promises.writeFile(inputPath, buffer);
 
 		try {
+			// 首先获取视频信息
+			const videoInfo = await new Promise((resolve, reject) => {
+				ffmpeg.ffprobe(inputPath, (err, metadata) => {
+					if (err) reject(err);
+					else resolve(metadata);
+				});
+			});
+
+			if (this.chatConfig.debug) {
+				console.log("视频信息:", videoInfo);
+			}
+
+			// 检查 duration
+			const duration = videoInfo.streams[0].duration;
+
+			// 如果获取不到 duration 或者 duration 是 'N/A'，直接转成静态图片
+			if (!duration || duration === "N/A") {
+				const outputPath = path.join(this.tmpDir, `frame_1.jpg`);
+				await new Promise((resolve, reject) => {
+					ffmpeg(inputPath)
+						.outputOptions("-frames:v", "1")
+						.save(outputPath)
+						.on("end", resolve)
+						.on("error", reject);
+				});
+
+				const frameBuffer = await fs.promises.readFile(outputPath);
+				const base64 = frameBuffer.toString("base64");
+				await fs.promises.unlink(outputPath);
+				await fs.promises.unlink(inputPath);
+				return [`data:image/jpeg;base64,${base64}`];
+			}
+
+			// 对于有 duration 的视频，抽取两帧
 			await new Promise((resolve, reject) => {
-				ffmpeg(inputPath)
-					.screenshots({
-						count: 2,
-						filename: "frame_%i.jpg",
-						folder: this.tmpDir,
-					})
-					.on("end", resolve)
-					.on("error", reject);
+				const command = ffmpeg(inputPath).screenshots({
+					count: 2,
+					filename: "frame_%i.jpg",
+					folder: this.tmpDir,
+				});
+
+				if (this.chatConfig.debug) {
+					command.on("start", (commandLine) => {
+						console.log("FFmpeg 命令:", commandLine);
+					});
+					command.on("progress", (progress) => {
+						console.log("FFmpeg 进度:", progress);
+					});
+				}
+
+				command.on("end", resolve).on("error", (err, stdout, stderr) => {
+					reject({
+						error: err,
+						ffmpegOutput: stdout,
+						ffmpegError: stderr,
+					});
+				});
 			});
 
 			// 读取生成的帧并转换为 base64
-			const frames = await Promise.all(
-				[1, 2].map(async (i) => {
+			const frameFiles = await Promise.all(
+				Array.from({ length: 2 }, (_, i) => i + 1).map(async (i) => {
 					const framePath = path.join(this.tmpDir, `frame_${i}.jpg`);
 					const frameBuffer = await fs.promises.readFile(framePath);
 					const base64 = frameBuffer.toString("base64");
@@ -227,10 +285,14 @@ export class VisionHelper {
 			);
 
 			await fs.promises.unlink(inputPath); // 清理输入文件
-			return frames;
+			return frameFiles;
 		} catch (error) {
-			console.error("提取帧失败:", error);
-			return [fileUrl];
+			console.error("提取帧失败:", {
+				message: error.error?.message || error.message,
+				ffmpegOutput: error.ffmpegOutput,
+				ffmpegError: error.ffmpegError,
+			});
+			throw error;
 		}
 	}
 }

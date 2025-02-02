@@ -58,9 +58,7 @@ export class RAGHelper {
                     text TEXT NOT NULL,
                     metadata JSONB NOT NULL,
                     embedding vector(1536),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    -- 添加复合索引
-                    CONSTRAINT idx_chat_message UNIQUE (chat_id, message_id)
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 
                 -- 创建索引
@@ -71,6 +69,27 @@ export class RAGHelper {
                 CREATE INDEX IF NOT EXISTS idx_chat_memories_metadata ON chat_memories USING gin (metadata);
             `);
 
+			// 添加用户记忆表
+			await client.query(`
+                CREATE TABLE IF NOT EXISTS user_memories (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    content_type TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    metadata JSONB NOT NULL DEFAULT '{}',
+                    embedding vector(3072), -- 这里用的是text-embedding-3-large
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, content_type)  -- 添加组合唯一约束
+                );
+                
+                -- 创建索引
+                CREATE INDEX IF NOT EXISTS idx_user_memories_user_id ON user_memories(user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_memories_content_type ON user_memories(content_type);
+                CREATE INDEX IF NOT EXISTS idx_user_memories_created_at ON user_memories(created_at);
+                CREATE INDEX IF NOT EXISTS idx_user_memories_metadata ON user_memories USING gin (metadata);
+            `);
+
 			client.release();
 			if (this.chatConfig.debug) console.log("数据库初始化完成");
 		} catch (error) {
@@ -78,10 +97,10 @@ export class RAGHelper {
 		}
 	}
 
-	async getEmbedding(text) {
+	async getEmbedding(text, model = "text-embedding-3-small") {
 		try {
 			const response = await this.openai.embeddings.create({
-				model: this.chatConfig.rag.backend.model,
+				model: model,
 				input: text,
 			});
 			return `[${response.data[0].embedding.join(",")}]`;
@@ -144,6 +163,15 @@ export class RAGHelper {
 			console.error(`保存${type}错误:`, error);
 			return false;
 		}
+	}
+
+	async getMessage(messageId) {
+		const client = await this.pool.connect();
+		const result = await client.query("SELECT * FROM chat_memories WHERE message_id = $1", [
+			messageId,
+		]);
+		client.release();
+		return result.rows[0];
 	}
 
 	// 获取消息上下文（基于message_id的前后文）
@@ -361,6 +389,52 @@ export class RAGHelper {
 		} catch (error) {
 			console.error("保存sticker描述错误:", error);
 			return false;
+		}
+	}
+
+	async updateUserMemory(userId, text, contentType = "memory") {
+		try {
+			const embedding = await this.getEmbedding(text, "text-embedding-3-large");
+			if (!embedding) return false;
+
+			const client = await this.pool.connect();
+
+			await client.query(
+				`INSERT INTO user_memories 
+				(user_id, content_type, text, embedding, updated_at) 
+				VALUES ($1, $2, $3, $4::vector, CURRENT_TIMESTAMP)
+				ON CONFLICT (user_id, content_type) 
+				DO UPDATE SET 
+					text = $3,
+					embedding = $4::vector,
+					updated_at = CURRENT_TIMESTAMP`,
+				[userId, contentType, text, embedding]
+			);
+
+			client.release();
+			return true;
+		} catch (error) {
+			console.error("更新用户记忆错误:", error);
+			return false;
+		}
+	}
+
+	async getUserMemory(userId, contentType = "memory") {
+		try {
+			const client = await this.pool.connect();
+			const result = await client.query(
+				`SELECT text, created_at, updated_at 
+				FROM user_memories 
+				WHERE user_id = $1 AND content_type = $2 
+				LIMIT 1`,
+				[userId, contentType]
+			);
+			client.release();
+
+			return result.rows.length > 0 ? result.rows[0] : null;
+		} catch (error) {
+			console.error("获取用户记忆错误:", error);
+			return null;
 		}
 	}
 }

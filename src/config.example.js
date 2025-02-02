@@ -5,7 +5,7 @@ const config = {
 			botUsername: "YOUR_BOT_USERNAME",
 		},
 		debug: false,
-		actionGenerator: {
+		actionGenerator: { // 主LLM，主要负责群聊行动
 			backend: {
 				apiKey: "YOUR_OPENAI_API_KEY",
 				baseURL: "https://api.openai.com/v1",
@@ -16,7 +16,7 @@ const config = {
 			systemPrompt: "你是一个群友",
 			jailbreakPrompt: "",
 		},
-		vision: {
+		vision: { // 视觉识别模型
 			backend: {
 				apiKey: "YOUR_OPENAI_API_KEY",
 				baseURL: "https://api.openai.com/v1",
@@ -30,14 +30,20 @@ const config = {
 			user: "your_user",
 			password: "your_password",
 		},
-		rag: {
+		rag: { // 处理嵌入，需要用到text-embedding-3-small 和 large 两个模型
 			backend: {
 				apiKey: "YOUR_OPENAI_API_KEY",
 				baseURL: "https://api.openai.com/v1",
-				model: "text-embedding-3-small",
 			},
 		},
-		google: {
+		secondaryLLM: { // 辅助LLM，主要负责记忆
+			backend: {
+				apiKey: "YOUR_OPENAI_API_KEY",
+				baseURL: "https://api.openai.com/v1",
+				model: "claude-3-5-sonnet-latest",
+			},
+		},
+		google: { // Google Custom Search JSON API
 			apiKey: "YOUR_GOOGLE_API_KEY",
 			cseId: "YOUR_GOOGLE_CSE_ID",
 		},

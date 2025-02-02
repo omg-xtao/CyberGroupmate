@@ -29,7 +29,7 @@ function getChatState(chatId) {
 			pendingAction: null,
 			// 为每个聊天创建独立的处理器实例
 			telegramHandler: new TelegramHandler(chatConfig, ragHelper, visionHelper),
-			llmHandler: new LLMHandler(chatConfig, botActionHelper),
+			llmHandler: new LLMHandler(chatConfig, botActionHelper, ragHelper),
 			kuukiyomi: new KuukiyomiHandler(chatConfig),
 		});
 	}

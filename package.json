@@ -2,9 +2,9 @@
 	"name": "cybergroupmate",
 	"version": "1.0.0",
 	"description": "",
-	"main": "index.js",
+	"main": "src/index.js",
 	"scripts": {
-		"run": "node src/index.mjs"
+		"start": "node src/index.js"
 	},
 	"type": "module",
 	"keywords": [],

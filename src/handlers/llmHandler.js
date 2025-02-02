@@ -3,10 +3,11 @@ import * as fs from "fs/promises";
 import * as path from "path";
 
 export class LLMHandler {
-	constructor(chatConfig = {}, botActionHelper) {
+	constructor(chatConfig = {}, botActionHelper, ragHelper) {
 		this.chatConfig = chatConfig;
 
 		this.botActionHelper = botActionHelper;
+		this.ragHelper = ragHelper;
 		// 初始化OpenAI客户端
 		this.openai = new OpenAI({
 			apiKey: chatConfig.actionGenerator.backend.apiKey,
@@ -20,7 +21,7 @@ export class LLMHandler {
 	async generateAction(context) {
 		try {
 			// 准备prompt
-			let messages = this.prepareMessages(context);
+			let messages = await this.prepareMessages(context);
 
 			// 调用API
 			let response = await this.callLLM(messages, context);
@@ -99,11 +100,12 @@ export class LLMHandler {
 	/**
 	 * 准备发送给LLM的消息
 	 */
-	prepareMessages(context, multiShotPrompt = "") {
+	async prepareMessages(context, multiShotPrompt = "") {
 		// 添加系统提示词，这里用system role
 		let messages = [{ role: "system", content: this.chatConfig.actionGenerator.systemPrompt + 
 `<facts>
 现在的时间是${new Date().toLocaleString("zh-CN", { timeZone: this.chatConfig.actionGenerator.timeZone })}
+当前唤起场景为${context.responseDecision.scene}。
 </facts>`
 		 }];
 
@@ -126,53 +128,68 @@ export class LLMHandler {
 				"\n</chat_history>"
 		);
 
+		// 在添加历史消息之后，添加用户记忆
+		if (["private", "mention", "trigger"].includes(context.responseDecision.decisionType)) {
+			// 获取最后一条消息的用户信息
+			const lastMessage = context.messageContext[context.messageContext.length - 1];
+			if (lastMessage?.metadata?.from?.id && lastMessage.content_type === "message") {
+				const userMemories = await this.ragHelper.getUserMemory(lastMessage.metadata.from.id);
+				if (userMemories) {
+					userRoleMessages.push(
+						"<user_memories>\n" +
+						`对用户 ${lastMessage.metadata.from.first_name || ""}${lastMessage.metadata.from.last_name || ""} 的记忆：\n` +
+						userMemories.text +
+						"\n</user_memories>"
+					);
+				}
+			}
+		}
+
 		// 添加可用函数
 		userRoleMessages.push(`<function>
-<function_call_instructions>
-你可以直接输出函数对应的identifier 作为XML Tag以调用函数，tag里包裹JSON格式的参数。一次可以调用多个函数。
-</function_call_instructions>
-<api identifier="chat____text">
-<api.instructions>直接向群内发送消息</api.instructions>
-<api.parameters>{"message": "要发送的内容"}</api.parameters>
-</api>
-<api identifier="chat____reply">
-<api.instructions>针对某一条消息进行回复（推荐）</api.instructions>
-<api.parameters>{"message_id": "要回复的消息ID", "reply": "回复内容"}</api.parameters>
-</api>
-<api identifier="chat____note">
-<api.instructions>记录有趣的碎碎念或者重要的心理活动、记忆节点</api.instructions>
-<api.parameters>{"note": "要记录的内容"}</api.parameters>
-</api>
-<api identifier="chat____skip">
-<api.instructions>当你认为没有必要回复也没有什么值得记录的内容的时候，可以跳过</api.instructions>
-<api.parameters>{}</api.parameters>
-</api>
-<api identifier="chat____search">
-<api.instructions>使用语义检索聊天历史</api.instructions>
-<api.parameters>{"keyword": "要搜索的多个关键词"}</api.parameters>
-</api>
-<api identifier="web_____search">
-<api.instructions>使用谷歌搜索互联网</api.instructions>
-<api.parameters>{"keyword": "要搜索的多个关键词"}</api.parameters>
-</api>
-</function>
+你可以使用以下函数和参数，一次可以调用多个函数，列表如下：
 
-<functioncall____example>
-{"参数名字": "参数值"}
-</functioncall____example>`);
+# 跳过（无参数）
+<chat____skip>
+</chat____skip>
+
+# 直接向群内发送消息
+<chat____text>
+<message>要发送的内容</message>
+</chat____text>
+
+# 回复某一条消息
+<chat____reply>
+<message_id>要回复的消息ID</message_id>
+<message>要发送的内容</message>
+</chat____reply>
+
+# 群聊笔记
+<chat____note>
+<note>要记录的内容</note>
+</chat____note> 
+
+# 使用语义检索聊天历史
+<chat____search>
+<keyword>要搜索的多个关键词</keyword>
+</chat____search>
+
+# 更新用户记忆
+<user____memories>
+<message_id>该用户的相关消息ID</message_id>
+<memories>要更新或者添加的长期记忆内容</memories>
+</user____memories>
+
+# 使用谷歌搜索互联网
+<web_____search>
+<keyword>要搜索的多个关键词</keyword>
+</web_____search>
+</function>
+`);
 
 		// 添加任务
 		if (!multiShotPrompt) {
-			userRoleMessages.push(`<task>
-首先严格按照以下步骤进行思考，用think标签输出思考过程，不少于100字：
-1. 现在群里有哪些话题？群里可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
-2. 哪个话题与你直接有关？如果与你无关，就不要继续回复了
-3. 回顾一下之前的对话，特别关注<bot_reply (刚刚)>标签，不要提供相似回应。
-4. 是否需要进一步调用函数去获得消息历史或网页搜索结果？
-5. 当前唤起场景为${context.responseDecision.scene}。根据你的角色设定，怎么行动才更加自然？
-
-然后模仿functioncall____example，一次可以调用多个函数。
-</task>`);
+			userRoleMessages.push(this.chatConfig.actionGenerator.taskPrompt);
 		} else {
 			userRoleMessages.push(multiShotPrompt);
 		}
@@ -263,13 +280,14 @@ export class LLMHandler {
 						break;
 
 					case "chat____reply":
-						if (!params.message_id || !params.reply) {
+						if (!params.message_id || !params.message) {
+							console.warn(params);
 							console.warn("回复消息缺少必要参数");
 							continue;
 						}
 						await this.botActionHelper.sendReply(
 							context.chatId,
-							params.reply,
+							params.message,
 							params.message_id
 						);
 						break;
@@ -312,6 +330,20 @@ export class LLMHandler {
 						await this.handleGoogleSearchResults(webResult, response, context);
 						break;
 
+					case "user____memories":
+						if (!params.message_id || !params.memories) {
+							console.warn("更新用户记忆缺少必要参数");
+							continue;
+						}
+						let memoryResult = await this.botActionHelper.updateMemory(
+							params.message_id,
+							params.memories
+						);
+						if (this.chatConfig.debug) {
+							console.log("更新用户记忆结果：", memoryResult);
+						}
+						break;
+
 					case "chat____text":
 						if (!params.message) {
 							console.warn("发送消息缺少内容参数");
@@ -348,9 +380,10 @@ export class LLMHandler {
 			"chat____note",
 			"chat____skip",
 			"web_____search",
+			"user____memories"
 		];
 		let combinedRegex = new RegExp(
-			`<(${supportedFunctions.join("|")})>([\\s\\S]*?)<\\/.*?>`,
+			`<(${supportedFunctions.join("|")})>([\\s\\S]*?)<\\/\\1>`,
 			"g"
 		);
 
@@ -384,12 +417,15 @@ export class LLMHandler {
 				}
 
 				// 解析其他函数的参数
-				let parsedParams;
-				try {
-					parsedParams = JSON.parse(params);
-				} catch (e) {
-					console.warn(`解析函数 ${funcName} 的参数失败，使用原始字符串:`, e);
-					parsedParams = params;
+				let parsedParams = {};
+				// 使用正则表达式匹配HTML标签
+				const tagRegex = /<(\w+)>([\s\S]*?)<\/\1>/g;
+				let paramMatch;
+				
+				while ((paramMatch = tagRegex.exec(params)) !== null) {
+					const [_, key, value] = paramMatch;
+					// 移除多余的空白字符
+					parsedParams[key] = value.trim();
 				}
 
 				functionCalls.push({
