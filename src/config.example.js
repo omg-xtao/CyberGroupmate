@@ -44,8 +44,8 @@ const config = {
 		kuukiyomi: {
 			initialResponseRate: 0.1,
 			cooldown: 3000,
-			groupRateLimit: 10,
-			userRateLimit: 5,
+			groupRateLimit: 100,
+			userRateLimit: 50,
 			triggerWords: [],
 			ignoreWords: [],
 			responseRateMin: 0.05,

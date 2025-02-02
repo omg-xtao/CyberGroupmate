@@ -24,8 +24,8 @@ export class BotActionHelper {
 			});
 	}
 
-	async saveNote(chatId, content, messageId) {
-		await this.ragHelper.saveAction(chatId, content, "note");
+	async saveAction(chatId, content, type, additionalMetadata = {}) {
+		await this.ragHelper.saveAction(chatId, content, type, additionalMetadata);
 	}
 
 	async search(chatId, keyword) {

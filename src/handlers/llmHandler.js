@@ -164,7 +164,7 @@ export class LLMHandler {
 		// 添加任务
 		if (!multiShotPrompt) {
 			userRoleMessages.push(`<task>
-首先严格按照以下步骤进行思考：
+首先严格按照以下步骤进行思考，用think标签输出思考过程，不少于100字：
 1. 现在群里有哪些话题？群里可能有多个人同时说话，但是他们讨论的可能是并行的不同话题，注意区分。
 2. 哪个话题与你直接有关？如果与你无关，就不要继续回复了
 3. 回顾一下之前的对话，特别关注<bot_reply (刚刚)>标签，不要提供相似回应。
@@ -257,6 +257,11 @@ export class LLMHandler {
 				let { function: funcName, params } = call;
 
 				switch (funcName) {
+					case "chat____skip":
+						if (this.chatConfig.debug) console.log("跳过");
+						await this.botActionHelper.saveAction(context.chatId, "", "skip");
+						break;
+
 					case "chat____reply":
 						if (!params.message_id || !params.reply) {
 							console.warn("回复消息缺少必要参数");
@@ -274,7 +279,7 @@ export class LLMHandler {
 							console.warn("记录笔记缺少必要参数");
 							continue;
 						}
-						await this.botActionHelper.saveNote(context.chatId, params.note);
+						await this.botActionHelper.saveAction(context.chatId, params.note, "note");
 						break;
 
 					case "chat____search":

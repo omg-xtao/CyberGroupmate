@@ -110,7 +110,8 @@ export class RAGHelper {
 			);
 			client.release();
 
-			if (this.chatConfig.debug) console.log("消息已保存");
+			if (this.chatConfig.debug)
+				console.log(`消息已保存 ${chat_id} ${message_id} ${content_type} ${text}`);
 			return true;
 		} catch (error) {
 			console.error("保存消息错误:", error);
