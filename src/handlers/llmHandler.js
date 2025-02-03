@@ -3,11 +3,12 @@ import * as fs from "fs/promises";
 import * as path from "path";
 
 export class LLMHandler {
-	constructor(chatConfig = {}, botActionHelper, ragHelper) {
+	constructor(chatConfig = {}, botActionHelper, ragHelper, kuukiyomiHandler) {
 		this.chatConfig = chatConfig;
 
 		this.botActionHelper = botActionHelper;
 		this.ragHelper = ragHelper;
+		this.kuukiyomiHandler = kuukiyomiHandler;
 		// 初始化OpenAI客户端
 		this.openai = new OpenAI({
 			apiKey: chatConfig.actionGenerator.backend.apiKey,
@@ -204,7 +205,8 @@ export class LLMHandler {
 	/**
 	 * 调用LLM API
 	 */
-	async callLLM(messages, context) {
+	async callLLM(messages, context, chatState) {
+		this.chatState = chatState;
 		let completion = await this.openai.chat.completions.create({
 			model: this.chatConfig.actionGenerator.backend.model,
 			messages: messages,
@@ -264,7 +266,6 @@ export class LLMHandler {
 		if (!response) return;
 
 		try {
-			// 修改这里的解构赋值语法
 			let extractResult = this.extractFunctionCalls(response);
 			let functionCalls = extractResult.functionCalls;
 			response = extractResult.response;
@@ -276,6 +277,8 @@ export class LLMHandler {
 					case "chat____skip":
 						if (this.chatConfig.debug) console.log("跳过");
 						await this.botActionHelper.saveAction(context.chatId, "", "skip");
+						// 减少响应率
+						this.kuukiyomiHandler.decreaseResponseRate(0.2);
 						break;
 
 					case "chat____reply":
@@ -289,6 +292,8 @@ export class LLMHandler {
 							params.message,
 							params.message_id
 						);
+						// 增加响应率
+						this.kuukiyomiHandler.increaseResponseRate(0.05);
 						break;
 
 					case "chat____note":

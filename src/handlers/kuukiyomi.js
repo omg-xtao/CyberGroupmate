@@ -257,4 +257,20 @@ export class KuukiyomiHandler {
 		this.stats.mentionCount = 0;
 		this.stats.triggerWordCount = 0;
 	}
+
+	// 直接增加响应率
+	increaseResponseRate(amount) {
+		this.currentResponseRate = Math.min(
+			this.currentResponseRate + amount,
+			this.config.responseRateMax
+		);
+	}
+
+	// 直接减少响应率
+	decreaseResponseRate(amount) {
+		this.currentResponseRate = Math.max(
+			this.currentResponseRate - amount,
+			this.config.responseRateMin
+		);
+	}
 }

@@ -24,13 +24,17 @@ function getChatState(chatId) {
 		const chatConfig = configManager.getChatConfig(chatId);
 		if (!chatConfig) return null;
 
+		let kuukiyomiHandler = new KuukiyomiHandler(chatConfig);
+		let llmHandler = new LLMHandler(chatConfig, botActionHelper, ragHelper, kuukiyomiHandler);
+		let telegramHandler = new TelegramHandler(chatConfig, ragHelper, visionHelper);
+
 		chatStates.set(chatId, {
 			isProcessing: false,
 			pendingAction: null,
 			// 为每个聊天创建独立的处理器实例
-			telegramHandler: new TelegramHandler(chatConfig, ragHelper, visionHelper),
-			llmHandler: new LLMHandler(chatConfig, botActionHelper, ragHelper),
-			kuukiyomi: new KuukiyomiHandler(chatConfig),
+			telegramHandler: telegramHandler,
+			llmHandler: llmHandler,
+			kuukiyomi: kuukiyomiHandler,
 		});
 	}
 	return chatStates.get(chatId);
@@ -105,12 +109,15 @@ async function processMessage(msg, processedMsg, responseDecision, chatState) {
 			ragHelper.getMessageContext(msg.chat.id, msg.message_id, 25),
 		]);
 
-		await chatState.llmHandler.generateAction({
-			similarMessage,
-			messageContext,
-			chatId: msg.chat.id,
-			responseDecision,
-		});
+		await chatState.llmHandler.generateAction(
+			{
+				similarMessage,
+				messageContext,
+				chatId: msg.chat.id,
+				responseDecision,
+			},
+			chatState
+		);
 	} finally {
 		chatState.isProcessing = false;
 
