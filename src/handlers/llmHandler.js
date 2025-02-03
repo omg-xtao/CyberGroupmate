@@ -9,11 +9,6 @@ export class LLMHandler {
 		this.botActionHelper = botActionHelper;
 		this.ragHelper = ragHelper;
 		this.kuukiyomiHandler = kuukiyomiHandler;
-		// 初始化OpenAI客户端
-		this.openai = new OpenAI({
-			apiKey: chatConfig.actionGenerator.backend.apiKey,
-			baseURL: chatConfig.actionGenerator.backend.baseURL,
-		});
 	}
 
 	/**
@@ -207,11 +202,23 @@ export class LLMHandler {
 	 */
 	async callLLM(messages, context, chatState) {
 		this.chatState = chatState;
-		let completion = await this.openai.chat.completions.create({
-			model: this.chatConfig.actionGenerator.backend.model,
+		
+		// 随机选择一个backend配置
+		const backendConfig = this.chatConfig.actionGenerator.backend[
+			Math.floor(Math.random() * this.chatConfig.actionGenerator.backend.length)
+		];
+		
+		// 使用选中的backend配置初始化OpenAI客户端
+		let openai = new OpenAI({
+			apiKey: backendConfig.apiKey,
+			baseURL: backendConfig.baseURL,
+		});
+		
+		let completion = await openai.chat.completions.create({
+			model: backendConfig.model,
 			messages: messages,
-			temperature: this.chatConfig.actionGenerator.backend.temperature,
-			max_tokens: this.chatConfig.actionGenerator.backend.maxTokens,
+			temperature: backendConfig.temperature,
+			max_tokens: backendConfig.maxTokens,
 			//presence_penalty: 0.6,
 			//frequency_penalty: 0.6,
 			//repetition_penalty: 1,
@@ -235,7 +242,7 @@ export class LLMHandler {
 				// 响应内容
 				response,
 				// 模型
-				`model: ${this.chatConfig.actionGenerator.backend.model}`,
+				`model: ${backendConfig.model}`,
 			].join("\n");
 
 			// 确保logs目录存在
@@ -248,7 +255,7 @@ export class LLMHandler {
 		if (this.chatConfig.memoChannelId && this.chatConfig.enableMemo) {
 			this.botActionHelper.sendText(
 				this.chatConfig.memoChannelId,
-				["response:", response, "model:", this.chatConfig.actionGenerator.backend.model].join("\n"),
+				["response:", response, "model:", backendConfig.model].join("\n"),
 				false
 			);
 		}

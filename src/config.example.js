@@ -6,13 +6,15 @@ const config = {
 		},
 		debug: false,
 		actionGenerator: { // 主LLM，主要负责群聊行动
-			backend: {
-				apiKey: "YOUR_OPENAI_API_KEY",
-				baseURL: "https://api.openai.com/v1",
-				model: "gpt-4-turbo-preview",
-				maxTokens: 2000,
-				temperature: 0.7,
-			},
+			backend: [ // 这里是数组，可以配置多个LLM，随机抽选一个后端
+				{
+					apiKey: "YOUR_OPENAI_API_KEY",
+					baseURL: "https://api.openai.com/v1",
+					model: "gpt-4-turbo-preview",
+					maxTokens: 2000,
+					temperature: 0.7,
+				}
+			],
 			systemPrompt: "你是一个群友",
 			jailbreakPrompt: "",
 		},
