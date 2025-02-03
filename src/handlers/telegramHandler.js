@@ -152,8 +152,11 @@ export class TelegramHandler {
 							telegramMsg.forward_origin.message_id;
 						displayName = chat.title || chat.username || "未知频道";
 						break;
-					case "hidden":
-						displayName = "隐藏来源";
+					case "hidden_user":
+						displayName = telegramMsg.forward_origin.sender_user_name;
+						standardizedMsg.metadata.forward_origin.sender_user = {
+							username: telegramMsg.forward_origin.sender_user_name,
+						};
 						break;
 					default:
 						displayName = "未知来源";
@@ -179,8 +182,8 @@ export class TelegramHandler {
 				standardizedMsg.metadata.media_type = telegramMsg.photo
 					? "photo"
 					: telegramMsg.video
-						? "video"
-						: "document";
+					? "video"
+					: "document";
 
 				// 即时处理：优先使用 caption，如果没有则使用默认文本
 				standardizedMsg.text = telegramMsg.caption || "[图片]";

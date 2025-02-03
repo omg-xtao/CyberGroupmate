@@ -36,17 +36,14 @@ export class VisionHelper {
 			const fileUrl = `https://api.telegram.org/file/bot${this.chatConfig.telegram.botToken}/${file.file_path}`;
 
 			// 2. 获取消息上下文
-			let contextMessages = [];
+			let contextMessages = "";
 			if (standardizedMsg.message_id) {
 				const context = await this.ragHelper.getMessageContext(
 					standardizedMsg.chat_id,
 					standardizedMsg.message_id,
 					3 // 获取前后各3条消息
 				);
-				contextMessages = context
-					.filter((msg) => msg.position === "before") // 只使用之前的消息作为上下文
-					.map((msg) => msg.text)
-					.join("\n");
+				contextMessages = context.map((msg) => msg.text).join("\n");
 			}
 
 			// 3. 构建系统提示
