@@ -8,20 +8,25 @@ export class BotActionHelper {
 		this.stickerHelper = stickerHelper;
 	}
 
-	async sendText(chatId, content, log = true) {
-		// 分割文本和emoji
-		const segments = this.splitContentIntoSegments(content);
+	async sendText(chatId, content, log = true, processEmoji = true) {
+		if (!processEmoji) {
+			// 如果不处理emoji，直接发送完整文本
+			await this.bot.sendMessage(chatId, content);
+		} else {
+			// 分割文本和emoji
+			const segments = this.splitContentIntoSegments(content);
 
-		for (const segment of segments) {
-			if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
-				// 如果是可用的emoji，发送对应的sticker
-				const stickerId = this.stickerHelper.getRandomSticker(segment);
-				if (stickerId) {
-					await this.bot.sendSticker(chatId, stickerId);
+			for (const segment of segments) {
+				if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
+					// 如果是可用的emoji，发送对应的sticker
+					const stickerId = this.stickerHelper.getRandomSticker(segment);
+					if (stickerId) {
+						await this.bot.sendSticker(chatId, stickerId);
+					}
+				} else if (segment.trim()) {
+					// 如果是普通文本且不为空，发送文本
+					await this.bot.sendMessage(chatId, segment);
 				}
-			} else if (segment.trim()) {
-				// 如果是普通文本且不为空，发送文本
-				await this.bot.sendMessage(chatId, segment);
 			}
 		}
 
@@ -33,31 +38,36 @@ export class BotActionHelper {
 		await this.bot.sendChatAction(chatId, "typing");
 	}
 
-	async sendReply(chatId, content, replyToMessageId, log = true) {
-		// 分割文本和emoji
-		const segments = this.splitContentIntoSegments(content);
+	async sendReply(chatId, content, replyToMessageId, log = true, processEmoji = true) {
+		if (!processEmoji) {
+			// 如果不处理emoji，直接发送完整文本
+			await this.bot.sendMessage(chatId, content, { reply_to_message_id: replyToMessageId });
+		} else {
+			// 分割文本和emoji
+			const segments = this.splitContentIntoSegments(content);
 
-		let firstSegment = true;
-		for (const segment of segments) {
-			if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
-				// 如果是可用的emoji，发送对应的sticker
-				const stickerId = this.stickerHelper.getRandomSticker(segment);
-				if (stickerId) {
-					await this.bot.sendSticker(
+			let firstSegment = true;
+			for (const segment of segments) {
+				if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
+					// 如果是可用的emoji，发送对应的sticker
+					const stickerId = this.stickerHelper.getRandomSticker(segment);
+					if (stickerId) {
+						await this.bot.sendSticker(
+							chatId,
+							stickerId,
+							firstSegment ? { reply_to_message_id: replyToMessageId } : {}
+						);
+					}
+				} else if (segment.trim()) {
+					// 如果是普通文本且不为空，发送文本
+					await this.bot.sendMessage(
 						chatId,
-						stickerId,
+						segment,
 						firstSegment ? { reply_to_message_id: replyToMessageId } : {}
 					);
 				}
-			} else if (segment.trim()) {
-				// 如果是普通文本且不为空，发送文本
-				await this.bot.sendMessage(
-					chatId,
-					segment,
-					firstSegment ? { reply_to_message_id: replyToMessageId } : {}
-				);
+				firstSegment = false;
 			}
-			firstSegment = false;
 		}
 
 		if (this.chatConfig.debug) console.log("发送回复：", content);

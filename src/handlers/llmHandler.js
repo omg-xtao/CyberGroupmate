@@ -190,7 +190,7 @@ export class LLMHandler {
 </function>
 `);
 		userRoleMessages.push(`<available_stickers>
-你可以在你的回复中包含以下 emoji 来发送贴纸（最多1个）：
+偶尔可以在你的回复中包含以下 emoji 来发送贴纸（最多1个，不能用其它的）：
 ${this.stickerHelper.getAvailableEmojis().join(",")}
 </available_stickers>`);
 
@@ -269,6 +269,7 @@ ${this.stickerHelper.getAvailableEmojis().join(",")}
 			this.botActionHelper.sendText(
 				this.chatConfig.memoChannelId,
 				["response:", response, "model:", backendConfig.model].join("\n"),
+				false,
 				false
 			);
 		}
