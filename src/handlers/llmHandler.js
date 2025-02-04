@@ -98,12 +98,17 @@ export class LLMHandler {
 	 */
 	async prepareMessages(context, multiShotPrompt = "") {
 		// 添加系统提示词，这里用system role
-		let messages = [{ role: "system", content: this.chatConfig.actionGenerator.systemPrompt + 
-`<facts>
+		let messages = [
+			{
+				role: "system",
+				content:
+					this.chatConfig.actionGenerator.systemPrompt +
+					`<facts>
 现在的时间是${new Date().toLocaleString("zh-CN", { timeZone: this.chatConfig.actionGenerator.timeZone })}
 当前唤起场景为${context.responseDecision.scene}。
-</facts>`
-		 }];
+</facts>`,
+			},
+		];
 
 		//从这里开始用 user role，所有消息先用回车分隔，最后再合并到 user role message 里
 		let userRoleMessages = [];
@@ -129,12 +134,14 @@ export class LLMHandler {
 			// 获取最后一条消息的用户信息
 			const lastMessage = context.messageContext[context.messageContext.length - 1];
 			if (lastMessage?.metadata?.from?.id && lastMessage.content_type === "message") {
-				const userMemories = await this.ragHelper.getUserMemory(lastMessage.metadata.from.id);
+				const userMemories = await this.ragHelper.getUserMemory(
+					lastMessage.metadata.from.id
+				);
 				if (userMemories) {
 					userRoleMessages.push(
 						`<user_memories for="${lastMessage.metadata.from.first_name || ""}${lastMessage.metadata.from.last_name || ""}">` +
-						userMemories.text +
-						"\n</user_memories>"
+							userMemories.text +
+							"\n</user_memories>"
 					);
 				}
 			}
@@ -159,7 +166,7 @@ export class LLMHandler {
 <message>要发送的内容</message>
 </chat____reply>
 
-# 群聊笔记
+# 群聊笔记，用符合心情的语气记录
 <chat____note>
 <note>要记录的内容</note>
 </chat____note> 
@@ -202,18 +209,19 @@ export class LLMHandler {
 	 */
 	async callLLM(messages, context, chatState) {
 		this.chatState = chatState;
-		
+
 		// 随机选择一个backend配置
-		const backendConfig = this.chatConfig.actionGenerator.backend[
-			Math.floor(Math.random() * this.chatConfig.actionGenerator.backend.length)
-		];
-		
+		const backendConfig =
+			this.chatConfig.actionGenerator.backend[
+				Math.floor(Math.random() * this.chatConfig.actionGenerator.backend.length)
+			];
+
 		// 使用选中的backend配置初始化OpenAI客户端
 		let openai = new OpenAI({
 			apiKey: backendConfig.apiKey,
 			baseURL: backendConfig.baseURL,
 		});
-		
+
 		let completion = await openai.chat.completions.create({
 			model: backendConfig.model,
 			messages: messages,
@@ -391,7 +399,7 @@ export class LLMHandler {
 			"chat____note",
 			"chat____skip",
 			"web_____search",
-			"user____memories"
+			"user____memories",
 		];
 		let combinedRegex = new RegExp(
 			`<(${supportedFunctions.join("|")})>([\\s\\S]*?)<\\/\\1>`,
@@ -432,7 +440,7 @@ export class LLMHandler {
 				// 使用正则表达式匹配HTML标签
 				const tagRegex = /<(\w+)>([\s\S]*?)<\/\1>/g;
 				let paramMatch;
-				
+
 				while ((paramMatch = tagRegex.exec(params)) !== null) {
 					const [_, key, value] = paramMatch;
 					// 移除多余的空白字符
