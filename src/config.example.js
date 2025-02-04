@@ -25,7 +25,7 @@ const config = {
 			backend: {
 				apiKey: "YOUR_OPENAI_API_KEY",
 				baseURL: "https://api.openai.com/v1",
-				model: "text-embedding-3-small",
+				model: "gpt-4o", // 需要能识别图片的模型
 			},
 		},
 		postgres: {

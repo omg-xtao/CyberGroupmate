@@ -9,72 +9,58 @@ export class BotActionHelper {
 	}
 
 	async sendText(chatId, content, log = true, processEmoji = true) {
-		if (!processEmoji) {
-			// 如果不处理emoji，直接发送完整文本
-			await this.bot.sendMessage(chatId, content);
-		} else {
-			// 分割文本和emoji
-			const segments = this.splitContentIntoSegments(content);
-
-			for (const segment of segments) {
-				if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
-					// 如果是可用的emoji，发送对应的sticker
-					const stickerId = this.stickerHelper.getRandomSticker(segment);
-					if (stickerId) {
-						await this.bot.sendSticker(chatId, stickerId);
-					}
-				} else if (segment.trim()) {
-					// 如果是普通文本且不为空，发送文本
-					await this.bot.sendMessage(chatId, segment);
-				}
-			}
-		}
-
-		if (this.chatConfig.debug) console.log("发送文本：", content);
-		if (log) await this.ragHelper.saveAction(chatId, content, "text");
-	}
-
-	async setTyping(chatId) {
-		await this.bot.sendChatAction(chatId, "typing");
+		await this._sendMessage(chatId, content, null, log, processEmoji);
 	}
 
 	async sendReply(chatId, content, replyToMessageId, log = true, processEmoji = true) {
-		if (!processEmoji) {
-			// 如果不处理emoji，直接发送完整文本
-			await this.bot.sendMessage(chatId, content, { reply_to_message_id: replyToMessageId });
+		await this._sendMessage(chatId, content, replyToMessageId, log, processEmoji);
+	}
+
+	async _sendMessage(chatId, content, replyToMessageId = null, log = true, processEmoji = true) {
+		const messageOptions = replyToMessageId ? { reply_to_message_id: replyToMessageId } : {};
+
+		if (!processEmoji || !this.stickerHelper.getAvailableEmojis().length) {
+			// 如果不处理emoji或没有可用的emoji，直接发送完整文本
+			await this.bot.sendMessage(chatId, content, messageOptions);
 		} else {
 			// 分割文本和emoji
 			const segments = this.splitContentIntoSegments(content);
-
 			let firstSegment = true;
+
 			for (const segment of segments) {
-				if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
-					// 如果是可用的emoji，发送对应的sticker
-					const stickerId = this.stickerHelper.getRandomSticker(segment);
-					if (stickerId) {
-						await this.bot.sendSticker(
-							chatId,
-							stickerId,
-							firstSegment ? { reply_to_message_id: replyToMessageId } : {}
-						);
+				const currentOptions = firstSegment ? messageOptions : {};
+				const isEmoji = /\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu.test(segment);
+
+				if (isEmoji) {
+					// 只处理可用的emoji
+					if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
+						const stickerId = this.stickerHelper.getRandomSticker(segment);
+						if (stickerId) {
+							await this.bot.sendSticker(chatId, stickerId, currentOptions);
+						}
 					}
+					// 如果是不可用的emoji，直接跳过
 				} else if (segment.trim()) {
 					// 如果是普通文本且不为空，发送文本
-					await this.bot.sendMessage(
-						chatId,
-						segment,
-						firstSegment ? { reply_to_message_id: replyToMessageId } : {}
-					);
+					await this.bot.sendMessage(chatId, segment, currentOptions);
 				}
 				firstSegment = false;
 			}
 		}
 
-		if (this.chatConfig.debug) console.log("发送回复：", content);
-		if (log)
-			await this.ragHelper.saveAction(chatId, content, "reply", {
-				reply_to_message_id: replyToMessageId,
-			});
+		if (this.chatConfig.debug) {
+			console.log(replyToMessageId ? "发送回复：" : "发送文本：", content);
+		}
+
+		if (log) {
+			const type = replyToMessageId ? "reply" : "text";
+			const metadata = replyToMessageId ? { reply_to_message_id: replyToMessageId } : {};
+			await this.ragHelper.saveAction(chatId, content, type, metadata);
+		}
+	}
+
+	async setTyping(chatId) {
+		await this.bot.sendChatAction(chatId, "typing");
 	}
 
 	async saveAction(chatId, content, type, additionalMetadata = {}) {
