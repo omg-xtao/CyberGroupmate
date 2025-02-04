@@ -3,12 +3,13 @@ import * as fs from "fs/promises";
 import * as path from "path";
 
 export class LLMHandler {
-	constructor(chatConfig = {}, botActionHelper, ragHelper, kuukiyomiHandler) {
+	constructor(chatConfig = {}, botActionHelper, ragHelper, kuukiyomiHandler, stickerHelper) {
 		this.chatConfig = chatConfig;
 
 		this.botActionHelper = botActionHelper;
 		this.ragHelper = ragHelper;
 		this.kuukiyomiHandler = kuukiyomiHandler;
+		this.stickerHelper = stickerHelper;
 	}
 
 	/**
@@ -188,6 +189,10 @@ export class LLMHandler {
 </web_____search>
 </function>
 `);
+		userRoleMessages.push(`<available_stickers>
+你可以在你的回复中包含以下 emoji 来发送贴纸（最多1个）：
+${this.stickerHelper.getAvailableEmojis().join(",")}
+</available_stickers>`);
 
 		// 添加任务
 		if (!multiShotPrompt) {
@@ -311,6 +316,14 @@ export class LLMHandler {
 						this.kuukiyomiHandler.increaseResponseRate(0.05);
 						break;
 
+					case "chat____text":
+						if (!params.message) {
+							console.warn("发送消息缺少内容参数");
+							continue;
+						}
+						await this.botActionHelper.sendText(context.chatId, params.message);
+						break;
+
 					case "chat____note":
 						if (!params.note) {
 							console.warn("记录笔记缺少必要参数");
@@ -361,14 +374,6 @@ export class LLMHandler {
 						if (this.chatConfig.debug) {
 							console.log("更新用户记忆结果：", memoryResult);
 						}
-						break;
-
-					case "chat____text":
-						if (!params.message) {
-							console.warn("发送消息缺少内容参数");
-							continue;
-						}
-						await this.botActionHelper.sendText(context.chatId, params.message);
 						break;
 				}
 			}

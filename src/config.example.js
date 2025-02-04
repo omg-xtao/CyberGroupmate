@@ -5,20 +5,23 @@ const config = {
 			botUsername: "YOUR_BOT_USERNAME",
 		},
 		debug: false,
-		actionGenerator: { // 主LLM，主要负责群聊行动
-			backend: [ // 这里是数组，可以配置多个LLM，随机抽选一个后端
+		actionGenerator: {
+			// 主LLM，主要负责群聊行动
+			backend: [
+				// 这里是数组，可以配置多个LLM，随机抽选一个后端
 				{
 					apiKey: "YOUR_OPENAI_API_KEY",
 					baseURL: "https://api.openai.com/v1",
 					model: "gpt-4-turbo-preview",
 					maxTokens: 2000,
 					temperature: 0.7,
-				}
+				},
 			],
 			systemPrompt: "你是一个群友",
 			jailbreakPrompt: "",
 		},
-		vision: { // 视觉识别模型
+		vision: {
+			// 视觉识别模型
 			backend: {
 				apiKey: "YOUR_OPENAI_API_KEY",
 				baseURL: "https://api.openai.com/v1",
@@ -32,20 +35,23 @@ const config = {
 			user: "your_user",
 			password: "your_password",
 		},
-		rag: { // 处理嵌入，需要用到text-embedding-3-small 和 large 两个模型
+		rag: {
+			// 处理嵌入，需要用到text-embedding-3-small 和 large 两个模型
 			backend: {
 				apiKey: "YOUR_OPENAI_API_KEY",
 				baseURL: "https://api.openai.com/v1",
 			},
 		},
-		secondaryLLM: { // 辅助LLM，主要负责记忆
+		secondaryLLM: {
+			// 辅助LLM，主要负责记忆
 			backend: {
 				apiKey: "YOUR_OPENAI_API_KEY",
 				baseURL: "https://api.openai.com/v1",
 				model: "claude-3-5-sonnet-latest",
 			},
 		},
-		google: { // Google Custom Search JSON API
+		google: {
+			// Google Custom Search JSON API
 			apiKey: "YOUR_GOOGLE_API_KEY",
 			cseId: "YOUR_GOOGLE_CSE_ID",
 		},
@@ -59,6 +65,13 @@ const config = {
 			responseRateMin: 0.05,
 			responseRateMax: 1,
 		},
+		availableStickerSets: [
+			// 可用的贴纸包
+			"pikachu_by_favorite_stickers_bot",
+			"SuicaMemes",
+			"in_BHEJDC_by_NaiDrawBot",
+			"NaughtyBlobs",
+		],
 		memoChannelId: -1001234567890,
 		enableMemo: true,
 		blacklistUsers: [],

@@ -7,6 +7,7 @@ import { BotActionHelper } from "./helpers/botActionHelper.js";
 import { VisionHelper } from "./helpers/visionHelper.js";
 import { ConfigManager } from "./managers/configManager.js";
 import config from "./config.js";
+import { StickerHelper } from "./helpers/stickerHelper.js";
 
 // 创建配置管理器
 const configManager = new ConfigManager(config);
@@ -25,7 +26,13 @@ function getChatState(chatId) {
 		if (!chatConfig) return null;
 
 		let kuukiyomiHandler = new KuukiyomiHandler(chatConfig);
-		let llmHandler = new LLMHandler(chatConfig, botActionHelper, ragHelper, kuukiyomiHandler);
+		let llmHandler = new LLMHandler(
+			chatConfig,
+			botActionHelper,
+			ragHelper,
+			kuukiyomiHandler,
+			stickerHelper
+		);
 		let telegramHandler = new TelegramHandler(chatConfig, ragHelper, visionHelper);
 
 		chatStates.set(chatId, {
@@ -43,7 +50,8 @@ function getChatState(chatId) {
 // 创建全局辅助实例
 const ragHelper = new RAGHelper(config.base);
 const visionHelper = new VisionHelper(config.base, bot, ragHelper);
-const botActionHelper = new BotActionHelper(config.base, bot, ragHelper);
+const stickerHelper = new StickerHelper(config.base, bot);
+const botActionHelper = new BotActionHelper(config.base, bot, ragHelper, stickerHelper);
 
 // 错误处理
 bot.on("polling_error", (error) => {

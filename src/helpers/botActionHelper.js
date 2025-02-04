@@ -1,14 +1,30 @@
 import OpenAI from "openai";
 
 export class BotActionHelper {
-	constructor(chatConfig, bot, ragHelper) {
+	constructor(chatConfig, bot, ragHelper, stickerHelper) {
 		this.chatConfig = chatConfig;
 		this.bot = bot;
 		this.ragHelper = ragHelper;
+		this.stickerHelper = stickerHelper;
 	}
 
 	async sendText(chatId, content, log = true) {
-		await this.bot.sendMessage(chatId, content);
+		// 分割文本和emoji
+		const segments = this.splitContentIntoSegments(content);
+
+		for (const segment of segments) {
+			if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
+				// 如果是可用的emoji，发送对应的sticker
+				const stickerId = this.stickerHelper.getRandomSticker(segment);
+				if (stickerId) {
+					await this.bot.sendSticker(chatId, stickerId);
+				}
+			} else if (segment.trim()) {
+				// 如果是普通文本且不为空，发送文本
+				await this.bot.sendMessage(chatId, segment);
+			}
+		}
+
 		if (this.chatConfig.debug) console.log("发送文本：", content);
 		if (log) await this.ragHelper.saveAction(chatId, content, "text");
 	}
@@ -18,7 +34,32 @@ export class BotActionHelper {
 	}
 
 	async sendReply(chatId, content, replyToMessageId, log = true) {
-		await this.bot.sendMessage(chatId, content, { reply_to_message_id: replyToMessageId });
+		// 分割文本和emoji
+		const segments = this.splitContentIntoSegments(content);
+
+		let firstSegment = true;
+		for (const segment of segments) {
+			if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
+				// 如果是可用的emoji，发送对应的sticker
+				const stickerId = this.stickerHelper.getRandomSticker(segment);
+				if (stickerId) {
+					await this.bot.sendSticker(
+						chatId,
+						stickerId,
+						firstSegment ? { reply_to_message_id: replyToMessageId } : {}
+					);
+				}
+			} else if (segment.trim()) {
+				// 如果是普通文本且不为空，发送文本
+				await this.bot.sendMessage(
+					chatId,
+					segment,
+					firstSegment ? { reply_to_message_id: replyToMessageId } : {}
+				);
+			}
+			firstSegment = false;
+		}
+
 		if (this.chatConfig.debug) console.log("发送回复：", content);
 		if (log)
 			await this.ragHelper.saveAction(chatId, content, "reply", {
@@ -128,5 +169,43 @@ export class BotActionHelper {
 				error: error.message,
 			};
 		}
+	}
+
+	// 辅助方法：将文本分割成普通文本和emoji的数组
+	splitContentIntoSegments(content) {
+		const segments = [];
+		let currentText = "";
+
+		// 使用正则表达式匹配emoji
+		// 这个正则表达式会匹配Unicode emoji
+		const emojiRegex = /\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu;
+		let lastIndex = 0;
+
+		for (const match of content.matchAll(emojiRegex)) {
+			// 添加emoji前的文本
+			if (match.index > lastIndex) {
+				currentText += content.slice(lastIndex, match.index);
+			}
+
+			// 如果有累积的文本，添加到segments
+			if (currentText) {
+				segments.push(currentText);
+				currentText = "";
+			}
+
+			// 添加emoji
+			segments.push(match[0]);
+			lastIndex = match.index + match[0].length;
+		}
+
+		// 添加剩余的文本
+		if (lastIndex < content.length) {
+			currentText += content.slice(lastIndex);
+		}
+		if (currentText) {
+			segments.push(currentText);
+		}
+
+		return segments;
 	}
 }
