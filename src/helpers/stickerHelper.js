@@ -2,7 +2,7 @@ class StickerHelper {
 	constructor(config, bot) {
 		this.config = config;
 		this.bot = bot;
-		this.stickerMap = new Map(); // emoji -> sticker file_ids
+		this.stickerMap = new Map(); // emoji -> sticker
 		this.initialize();
 	}
 
@@ -17,7 +17,7 @@ class StickerHelper {
 					if (!this.stickerMap.has(sticker.emoji)) {
 						this.stickerMap.set(sticker.emoji, []);
 					}
-					this.stickerMap.get(sticker.emoji).push(sticker.file_id);
+					this.stickerMap.get(sticker.emoji).push(sticker);
 				}
 			}
 			console.log(`已加载 ${this.stickerMap.size} 个不同emoji的贴纸`);

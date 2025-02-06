@@ -51,7 +51,13 @@ function getChatState(chatId) {
 const ragHelper = new RAGHelper(config.base);
 const visionHelper = new VisionHelper(config.base, bot, ragHelper);
 const stickerHelper = new StickerHelper(config.base, bot);
-const botActionHelper = new BotActionHelper(config.base, bot, ragHelper, stickerHelper);
+const botActionHelper = new BotActionHelper(
+	config.base,
+	bot,
+	ragHelper,
+	stickerHelper,
+	visionHelper
+);
 
 // 错误处理
 bot.on("polling_error", (error) => {

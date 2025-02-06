@@ -1,11 +1,12 @@
 import OpenAI from "openai";
 
 export class BotActionHelper {
-	constructor(chatConfig, bot, ragHelper, stickerHelper) {
+	constructor(chatConfig, bot, ragHelper, stickerHelper, visionHelper) {
 		this.chatConfig = chatConfig;
 		this.bot = bot;
 		this.ragHelper = ragHelper;
 		this.stickerHelper = stickerHelper;
+		this.visionHelper = visionHelper;
 	}
 
 	async sendText(chatId, content, log = true, processEmoji = true) {
@@ -34,15 +35,56 @@ export class BotActionHelper {
 				if (isEmoji) {
 					// 只处理可用的emoji
 					if (this.stickerHelper.getAvailableEmojis().includes(segment)) {
-						const stickerId = this.stickerHelper.getRandomSticker(segment);
-						if (stickerId) {
-							await this.bot.sendSticker(chatId, stickerId, currentOptions);
+						const sticker = this.stickerHelper.getRandomSticker(segment);
+						if (sticker) {
+							// 发送sticker
+							await this.bot.sendSticker(chatId, sticker.file_id, currentOptions);
+
+							// 获取或生成sticker描述
+							let description = await this.ragHelper.getStickerDescription(
+								sticker.file_unique_id,
+								sticker.file_id
+							);
+							if (!description) {
+								description = await this.visionHelper.analyzeSticker(sticker);
+								await this.ragHelper.saveStickerDescription(
+									sticker.file_unique_id,
+									sticker.file_id,
+									description,
+									{ emoji: segment }
+								);
+							}
+
+							// 记录sticker动作
+							if (log) {
+								const metadata = {
+									sticker_file_id: sticker.file_id,
+									description: description,
+									...(replyToMessageId && {
+										reply_to_message_id: replyToMessageId,
+									}),
+								};
+								await this.ragHelper.saveAction(
+									chatId,
+									description,
+									"sticker",
+									metadata
+								);
+							}
 						}
 					}
 					// 如果是不可用的emoji，直接跳过
 				} else if (segment.trim()) {
 					// 如果是普通文本且不为空，发送文本
 					await this.bot.sendMessage(chatId, segment, currentOptions);
+
+					if (log) {
+						const type = replyToMessageId ? "reply" : "text";
+						const metadata = replyToMessageId
+							? { reply_to_message_id: replyToMessageId }
+							: {};
+						await this.ragHelper.saveAction(chatId, segment, type, metadata);
+					}
 				}
 				firstSegment = false;
 			}
@@ -50,12 +92,6 @@ export class BotActionHelper {
 
 		if (this.chatConfig.debug) {
 			console.log(replyToMessageId ? "发送回复：" : "发送文本：", content);
-		}
-
-		if (log) {
-			const type = replyToMessageId ? "reply" : "text";
-			const metadata = replyToMessageId ? { reply_to_message_id: replyToMessageId } : {};
-			await this.ragHelper.saveAction(chatId, content, type, metadata);
 		}
 	}
 

@@ -347,7 +347,7 @@ export class RAGHelper {
 		}
 	}
 
-	// 添加新方法：获取或保存 sticker 描述
+	// 获取 sticker 描述
 	async getStickerDescription(stickerFileUniqueId, stickerFileId) {
 		try {
 			const client = await this.pool.connect();
