@@ -17,9 +17,6 @@ export class LLMHandler {
 	 */
 	async generateAction(context, chatState) {
 		try {
-			// 创建新的 AbortController
-			chatState.abortController = new AbortController();
-
 			// 准备prompt
 			let messages = await this.prepareMessages(context);
 

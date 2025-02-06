@@ -128,6 +128,7 @@ async function processMessage(msg, processedMsg, responseDecision, chatState) {
 		chatState.isProcessing = true;
 		chatState.retryCount = 0; // 初始化重试计数
 		chatState.processingStartTime = Date.now(); // 记录开始处理的时间
+		chatState.abortController = new AbortController();
 
 		while (true) {
 			try {
