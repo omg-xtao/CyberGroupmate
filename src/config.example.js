@@ -19,6 +19,7 @@ const config = {
 			],
 			systemPrompt: "你是一个群友",
 			jailbreakPrompt: "",
+			maxRetryCount: 3, // 最大允许打断次数，不可覆盖属性
 		},
 		vision: {
 			// 视觉识别模型

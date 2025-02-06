@@ -15,19 +15,34 @@ export class LLMHandler {
 	/**
 	 * 生成行动
 	 */
-	async generateAction(context) {
+	async generateAction(context, chatState) {
 		try {
+			// 创建新的 AbortController
+			chatState.abortController = new AbortController();
+
 			// 准备prompt
 			let messages = await this.prepareMessages(context);
 
-			// 调用API
-			let response = await this.callLLM(messages, context);
+			// 调用API（传递signal）
+			let response = await this.callLLM(
+				messages,
+				context,
+				chatState?.abortController?.signal
+			);
+
+			// 如果已经被中断，直接返回
+			if (chatState?.abortController?.signal.aborted) {
+				throw new Error("AbortError");
+			}
 
 			// 处理响应
 			await this.processResponse(response, context);
 
 			return response;
 		} catch (error) {
+			if (error.name === "AbortError" || error.message === "AbortError") {
+				throw error; // 将 AbortError 抛出，让上层处理重试逻辑
+			}
 			console.error("生成行动出错:", error);
 			throw error;
 		}
@@ -212,8 +227,8 @@ ${this.stickerHelper.getAvailableEmojis().join(",")}
 	/**
 	 * 调用LLM API
 	 */
-	async callLLM(messages, context, chatState) {
-		this.chatState = chatState;
+	async callLLM(messages, context, signal) {
+		this.chatState = context;
 
 		// 随机选择一个backend配置
 		const backendConfig =
@@ -227,54 +242,62 @@ ${this.stickerHelper.getAvailableEmojis().join(",")}
 			baseURL: backendConfig.baseURL,
 		});
 
-		let completion = await openai.chat.completions.create({
-			model: backendConfig.model,
-			messages: messages,
-			temperature: backendConfig.temperature,
-			max_tokens: backendConfig.maxTokens,
-			//presence_penalty: 0.6,
-			//frequency_penalty: 0.6,
-			//repetition_penalty: 1,
-			//include_reasoning: true,
-		});
-
-		// 合并reasoning和content
-		let response =
-			(completion.choices[0].message?.reasoning ||
-				completion.choices[0].message?.reasoning_content ||
-				"") + completion.choices[0].message?.content || "";
-
-		if (this.chatConfig.debug) {
-			// 保存日志到文件
-			let timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-			let logContent = [
-				// 输入消息
-				messages.map((msg) => `--- ${msg.role} ---\n${msg.content}\n`).join("\n"),
-				// 分隔线
-				"\n=== Response ===\n",
-				// 响应内容
-				response,
-				// 模型
-				`model: ${backendConfig.model}`,
-			].join("\n");
-
-			// 确保logs目录存在
-			await fs.mkdir("logs", { recursive: true });
-
-			// 写入日志文件
-			await fs.writeFile(path.join("logs", `${timestamp}.txt`), logContent, "utf-8");
-		}
-		// 保存碎碎念
-		if (this.chatConfig.memoChannelId && this.chatConfig.enableMemo) {
-			this.botActionHelper.sendText(
-				this.chatConfig.memoChannelId,
-				["response:", response, "model:", backendConfig.model].join("\n"),
-				false,
-				false
+		try {
+			let completion = await openai.chat.completions.create(
+				{
+					model: backendConfig.model,
+					messages: messages,
+					temperature: backendConfig.temperature,
+					max_tokens: backendConfig.maxTokens,
+				},
+				{
+					signal: signal,
+				}
 			);
-		}
 
-		return response;
+			// 合并reasoning和content
+			let response =
+				(completion.choices[0].message?.reasoning ||
+					completion.choices[0].message?.reasoning_content ||
+					"") + completion.choices[0].message?.content || "";
+
+			if (this.chatConfig.debug) {
+				// 保存日志到文件
+				let timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+				let logContent = [
+					// 输入消息
+					messages.map((msg) => `--- ${msg.role} ---\n${msg.content}\n`).join("\n"),
+					// 分隔线
+					"\n=== Response ===\n",
+					// 响应内容
+					response,
+					// 模型
+					`model: ${backendConfig.model}`,
+				].join("\n");
+
+				// 确保logs目录存在
+				await fs.mkdir("logs", { recursive: true });
+
+				// 写入日志文件
+				await fs.writeFile(path.join("logs", `${timestamp}.txt`), logContent, "utf-8");
+			}
+			// 保存碎碎念
+			if (this.chatConfig.memoChannelId && this.chatConfig.enableMemo) {
+				this.botActionHelper.sendText(
+					this.chatConfig.memoChannelId,
+					["response:", response, "model:", backendConfig.model].join("\n"),
+					false,
+					false
+				);
+			}
+
+			return response;
+		} catch (error) {
+			if (error.message === "Request was aborted.") {
+				throw new Error("AbortError");
+			}
+			throw error;
+		}
 	}
 
 	/**
@@ -293,6 +316,11 @@ ${this.stickerHelper.getAvailableEmojis().join(",")}
 
 			for (let call of functionCalls) {
 				let { function: funcName, params } = call;
+
+				// 检查是否已被中断
+				if (context.signal?.aborted) {
+					throw new Error("AbortError");
+				}
 
 				switch (funcName) {
 					case "chat____skip":
@@ -379,7 +407,11 @@ ${this.stickerHelper.getAvailableEmojis().join(",")}
 				}
 			}
 		} catch (error) {
+			if (error.name === "AbortError" || error.message === "AbortError") {
+				throw error;
+			}
 			console.error("处理响应出错:", error);
+			throw error;
 		}
 	}
 
