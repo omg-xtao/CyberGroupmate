@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 import fs from "fs";
 import path from "path";
 
@@ -18,6 +19,7 @@ export class VisionHelper {
 
 		this.model = this.chatConfig.vision.backend.model;
 		ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+		ffmpeg.setFfprobePath(ffprobeInstaller.path);
 		this.tmpDir = path.join(process.cwd(), "tmp");
 		if (!fs.existsSync(this.tmpDir)) {
 			fs.mkdirSync(this.tmpDir);
