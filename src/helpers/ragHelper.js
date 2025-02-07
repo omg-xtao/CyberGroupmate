@@ -98,6 +98,7 @@ export class RAGHelper {
 	}
 
 	async getEmbedding(text, model = "BAAI/bge-m3") {
+		if (!text) return null;
 		try {
 			const response = await this.openai.embeddings.create({
 				model: model,
