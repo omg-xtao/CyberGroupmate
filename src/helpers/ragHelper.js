@@ -57,7 +57,7 @@ export class RAGHelper {
                     content_type TEXT NOT NULL,  -- 'message', 'search_result', 'reply', 'note' 等
                     text TEXT NOT NULL,
                     metadata JSONB NOT NULL,
-                    embedding vector(1536),
+                    embedding vector(1024),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 
@@ -77,7 +77,7 @@ export class RAGHelper {
                     content_type TEXT NOT NULL,
                     text TEXT NOT NULL,
                     metadata JSONB NOT NULL DEFAULT '{}',
-                    embedding vector(3072), -- 这里用的是text-embedding-3-large
+                    embedding vector(1024), -- 这里用的是text-embedding-3-large
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, content_type)  -- 添加组合唯一约束
@@ -97,7 +97,7 @@ export class RAGHelper {
 		}
 	}
 
-	async getEmbedding(text, model = "text-embedding-3-small") {
+	async getEmbedding(text, model = "BAAI/bge-m3") {
 		try {
 			const response = await this.openai.embeddings.create({
 				model: model,
@@ -394,7 +394,7 @@ export class RAGHelper {
 
 	async updateUserMemory(userId, text, contentType = "memory") {
 		try {
-			const embedding = await this.getEmbedding(text, "text-embedding-3-large");
+			const embedding = await this.getEmbedding(text, "BAAI/bge-m3");
 			if (!embedding) return false;
 
 			const client = await this.pool.connect();
